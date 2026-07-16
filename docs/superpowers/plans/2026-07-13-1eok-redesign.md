@@ -80,7 +80,7 @@ eq("budget floor 0", drained[1].budget, 0);
 
 // 스트릭: 미판정일은 건너뛰고, 실패에서 끊긴다 (오늘=7일)
 // day7 clear, day6 unjudged, day5 clear, day4 fail → streak 2
-const streakDays = L.dailyBudgets(310000, { 4: 999999, 5: 3000, 7: 3000 }, 31);
+const streakDays = L.dailyBudgets(310000, { 4: 20000, 5: 3000, 7: 3000 }, 31);
 eq("streak skips unjudged, stops at fail", L.missionStreak(streakDays, 7), 2);
 eq("streak today over = 0", L.missionStreak(L.dailyBudgets(310000, { 7: 999999 }, 31), 7), 0);
 
