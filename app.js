@@ -262,7 +262,8 @@ function renderReality(m) {
       </div>
       ${
         m.settledThisMonth
-          ? `<p class="settle-sub">이번 달 결산 완료 · 보고서는 흐름 탭에</p>`
+          ? `<p class="settle-sub">이번 달 결산 완료 · 보고서는 흐름 탭에</p>
+             <button class="ghost-button" data-open-settle>다시 결산</button>`
           : `<button class="settle-cta" data-open-settle>${m.today.getMonth() + 1}월 결산하기 · 계좌 잔고 입력</button>`
       }
     </section>
@@ -583,15 +584,31 @@ function openSettleSheet(m) {
 
 /* ---------- 월간 보고서 ---------- */
 
+function settlementArrival(sortedSettlements, index, targetAmount) {
+  const st = sortedSettlements[index];
+  const history = sortedSettlements.slice(0, index + 1);
+  const speed = savingSpeed(history, Number(st.requiredSaving || 0));
+  const remaining = Math.max(0, targetAmount - st.total);
+  return arrivalDate(remaining, speed.monthlySaving, parseDate(st.date));
+}
+
 function openReportSheet(settlement) {
-  const others = state.settlements.filter((st) => st.month < settlement.month);
-  const prev = others.slice().sort((a, b) => a.month.localeCompare(b.month)).at(-1) || null;
+  const sorted = state.settlements.slice().sort((a, b) => a.month.localeCompare(b.month));
+  const index = sorted.findIndex((st) => st.month === settlement.month);
+  const prev = index > 0 ? sorted[index - 1] : null;
   const gap = prev ? Math.max(1, monthDiff(prev.month, settlement.month)) : 0;
   const delta = prev ? (settlement.total - prev.total) / gap : null;
   const required = Number(settlement.requiredSaving || 0);
   const income = Number(settlement.monthlyIncome || 0);
-  const m = getMetrics(state);
-  const arrivalText = m.arrival ? `${m.arrival.getFullYear()}년 ${m.arrival.getMonth() + 1}월` : "속도 부족";
+  const targetAmount = Number(state.settings.targetAmount || 0);
+  const arrivalNow = index >= 0 ? settlementArrival(sorted, index, targetAmount) : null;
+  const arrivalPrevDate = index > 0 ? settlementArrival(sorted, index - 1, targetAmount) : null;
+  const arrivalText = arrivalNow ? `${arrivalNow.getFullYear()}년 ${arrivalNow.getMonth() + 1}월` : "속도 부족";
+  let arrivalShift = "";
+  if (arrivalNow && arrivalPrevDate) {
+    const shift = monthDiff(monthKey(arrivalPrevDate), monthKey(arrivalNow));
+    arrivalShift = shift === 0 ? " · 변화 없음" : shift > 0 ? ` · ${shift}개월 밀림` : ` · ${Math.abs(shift)}개월 앞당김`;
+  }
   const [year, monthNum] = settlement.month.split("-");
 
   const modal = document.createElement("div");
@@ -612,7 +629,7 @@ function openReportSheet(settlement) {
               <div class="report-line"><span>월평균 저축</span><strong class="num">${signedMoney(Math.round(delta))}</strong></div>
               <div class="report-line"><span>필요 월저축</span><strong class="num">${money(required)}</strong></div>
               ${income > 0 ? `<div class="report-line"><span>저축률</span><strong class="num">${((delta / income) * 100).toFixed(1)}%</strong></div>` : ""}
-              <div class="report-line"><span>도착 예상</span><strong class="num">${arrivalText}</strong></div>
+              <div class="report-line"><span>도착 예상</span><strong class="num">${arrivalText}${arrivalShift}</strong></div>
             </div>
             <p class="report-verdict ${delta >= required ? "" : "miss"}">
               ${delta >= required
@@ -1044,8 +1061,8 @@ function renderOnboarding() {
             <button class="ghost-button" type="button" data-add-onboard-account>+ 계좌 더 추가</button>
           </div>
           <div class="two-col">
-            <div class="field"><label for="obTarget">목표 금액</label><input id="obTarget" name="targetAmount" inputmode="numeric" value="100000000" /></div>
-            <div class="field"><label for="obDate">목표일</label><input id="obDate" name="targetDate" type="date" value="2030-12-31" /></div>
+            <div class="field"><label for="obTarget">목표 금액</label><input id="obTarget" name="targetAmount" inputmode="numeric" value="${state.settings.targetAmount}" /></div>
+            <div class="field"><label for="obDate">목표일</label><input id="obDate" name="targetDate" type="date" value="${escapeHtml(state.settings.targetDate)}" /></div>
           </div>
           <div class="two-col">
             <div class="field"><label for="obIncome">월 수입</label><input id="obIncome" name="monthlyIncome" inputmode="numeric" placeholder="예: 3200000" /></div>
@@ -1097,20 +1114,22 @@ function bindOnboarding() {
     const total = balances.reduce((sum, b) => sum + b.amount, 0);
     const requiredSaving = requiredMonthlySaving(targetAmount, total, targetDate, today);
 
-    const fixedItems = [];
-    if (monthlyIncome > 0) fixedItems.push({ id: cryptoId(), type: "income", name: "월급", amount: monthlyIncome, day: 25, category: "급여", active: true, startMonth: monthKey(today) });
-    if (fixedExpense > 0) fixedItems.push({ id: cryptoId(), type: "expense", name: "고정비", amount: fixedExpense, day: 1, category: "고정비", active: true, startMonth: monthKey(today) });
+    const autoItems = [];
+    if (state.fixedItems.length === 0) {
+      if (monthlyIncome > 0) autoItems.push({ id: cryptoId(), type: "income", name: "월급", amount: monthlyIncome, day: 25, category: "급여", active: true, startMonth: monthKey(today) });
+      if (fixedExpense > 0) autoItems.push({ id: cryptoId(), type: "expense", name: "고정비", amount: fixedExpense, day: 1, category: "고정비", active: true, startMonth: monthKey(today) });
+    }
 
     state = applyFixedItems({
-      ...defaultState(),
+      ...state,
       hasOnboarded: true,
-      settings: { targetAmount, targetDate, monthlyIncome, startDate: localDateString(today) },
+      settings: { ...state.settings, targetAmount, targetDate, monthlyIncome, startDate: localDateString(today) },
       accounts,
       settlements: [{
         id: cryptoId(), month: monthKey(today), date: localDateString(today),
         balances, total, requiredSaving: Math.round(requiredSaving), monthlyIncome,
       }],
-      fixedItems,
+      fixedItems: [...state.fixedItems, ...autoItems],
       toast: "내 숫자로 시작합니다.",
     });
     saveState();
