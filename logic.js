@@ -38,17 +38,9 @@ function addMonths(date, count) {
   const day = next.getDate();
   next.setDate(1);
   next.setMonth(next.getMonth() + count);
-  const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  const lastDay = daysInMonth(next.getFullYear(), next.getMonth() + 1);
   next.setDate(Math.min(day, lastDay));
   return next;
-}
-
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function daysBetween(fromDate, toDate) {
-  return Math.max(0, Math.floor((startOfDay(toDate) - startOfDay(fromDate)) / 86400000));
 }
 
 function requiredMonthlySaving(targetAmount, currentNetWorth, targetDate, today) {
@@ -90,8 +82,9 @@ function missionStreak(dayResults, todayDay) {
 }
 
 // 월 오름차순 정렬 후 인접 쌍의 (총액차 ÷ 개월차) — 갭 월은 월평균으로 정규화
+// 전제: settlements는 월당 최대 1건 (호출측이 같은 달 재결산 시 교체)
 function settlementDeltas(settlements) {
-  const sorted = settlements.slice().sort((a, b) => (a.month < b.month ? -1 : 1));
+  const sorted = settlements.slice().sort((a, b) => a.month.localeCompare(b.month));
   const deltas = [];
   for (let i = 1; i < sorted.length; i += 1) {
     const gap = Math.max(1, monthDiff(sorted[i - 1].month, sorted[i].month));
@@ -113,6 +106,7 @@ function savingSpeed(settlements, requiredSaving) {
 }
 
 // 결산 당일 거래는 잔고에 반영된 것으로 보고 제외(date > settlement.date만 합산)
+// 전제: latestSettlement는 non-null (온보딩이 첫 결산을 보장)
 function currentNetWorth(latestSettlement, transactions) {
   const net = transactions
     .filter((tx) => tx.date > latestSettlement.date)
@@ -127,7 +121,7 @@ function arrivalDate(remaining, monthlySaving, today) {
 
 const api = {
   pad, localDateString, parseDate, monthKey, monthDiff, daysInMonth,
-  monthsBetween, addMonths, startOfDay, daysBetween,
+  monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, arrivalDate,
 };

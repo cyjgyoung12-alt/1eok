@@ -15,6 +15,13 @@ eq("monthDiff same", L.monthDiff("2026-07", "2026-07"), 0);
 eq("monthDiff cross-year", L.monthDiff("2025-11", "2026-02"), 3);
 eq("daysInMonth Feb 2026", L.daysInMonth(2026, 2), 28);
 
+// 월말 클램프 + 윤년
+eq("addMonths month-end clamp", L.localDateString(L.addMonths(new Date(2026, 0, 31), 1)), "2026-02-28");
+eq("addMonths leap year", L.localDateString(L.addMonths(new Date(2024, 0, 31), 1)), "2024-02-29");
+eq("daysInMonth leap Feb", L.daysInMonth(2024, 2), 29);
+// monthsBetween: 도착일의 일(day)이 시작일보다 앞서면 한 달 덜 침
+eq("monthsBetween partial month", L.monthsBetween(new Date(2026, 6, 13), new Date(2026, 8, 12)), 1);
+
 // 필요 월저축 = 남은 금액 / max(1, 남은 개월)
 const today = new Date(2026, 6, 13); // 2026-07-13
 approx("requiredSaving", L.requiredMonthlySaving(100000000, 26580000, "2030-12-31", today), 73420000 / 53);
@@ -58,6 +65,12 @@ eq("speed assumed", L.savingSpeed([{ month: "2026-07", total: 26580000 }], 13600
   { monthlySaving: 1360000, basis: "assumed", deltaCount: 0 });
 eq("speed none", L.savingSpeed([{ month: "2026-07", total: 26580000 }], 0),
   { monthlySaving: 0, basis: "none", deltaCount: 0 });
+// savingSpeed는 델타를 최근 3개로 제한
+eq("speed caps at 3 deltas", L.savingSpeed([
+  { month: "2026-01", total: 10 }, { month: "2026-02", total: 20 },
+  { month: "2026-03", total: 30 }, { month: "2026-04", total: 40 },
+  { month: "2026-05", total: 50 },
+], 0).deltaCount, 3);
 
 // 현재 자산 = 최신 결산 총액 + 결산일 이후 거래 순액 (결산 당일 거래는 제외)
 const txs = [
