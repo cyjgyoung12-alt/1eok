@@ -459,6 +459,170 @@ function applyFixedItems(currentState) {
   return { ...currentState, transactions: nextTransactions };
 }
 
+/* ---------- 계산 기준 시트 ---------- */
+
+function openSpeedSheet(m) {
+  const deltas = settlementDeltas(state.settlements).slice(-3);
+  const arrivalText = m.arrival ? `${m.arrival.getFullYear()}년 ${m.arrival.getMonth() + 1}월` : "속도 부족";
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">계산 기준</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <p class="report-headline num">${arrivalText}</p>
+      <p class="hero-sub">${m.basisLabel}</p>
+      <div class="section">
+        <div class="money-row"><span>1억까지 남은 금액</span><strong class="num">${readableMoney(m.remaining)}</strong></div>
+        <div class="money-row"><span>계산에 쓴 월 저축액</span><strong class="num">${money(Math.round(m.speed.monthlySaving))}</strong></div>
+        <div class="money-row"><span>목표 기준 필요 월저축</span><strong class="num">${money(Math.round(m.requiredSaving))}</strong></div>
+      </div>
+      ${
+        deltas.length
+          ? `<div class="section"><div class="section-title-row"><h3 class="section-title">최근 결산 델타</h3><span class="section-note">월평균 정규화</span></div>
+             ${deltas.map((d) => `<div class="money-row"><span>월 저축</span><strong class="num">${signedMoney(Math.round(d))}</strong></div>`).join("")}</div>`
+          : `<p class="empty-state">결산이 2번 쌓이면 실제 속도로 전환됩니다.</p>`
+      }
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+}
+
+/* ---------- 결산 시트 ---------- */
+
+function openSettleSheet(m) {
+  const activeAccounts = state.accounts.filter((a) => a.active).sort((a, b) => a.order - b.order);
+  if (!activeAccounts.length) {
+    setState((prev) => ({ ...prev, activeTab: "settings", toast: "먼저 설정에서 계좌를 등록해 주세요." }));
+    clearToastSoon();
+    return;
+  }
+  const latest = m.latest;
+  const prevBalance = (accountId) => {
+    const found = latest?.balances?.find((b) => b.accountId === accountId);
+    return found ? Number(found.amount) : "";
+  };
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">${m.today.getMonth() + 1}월 결산 · 계좌 잔고</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <form class="form-grid" data-settle-form>
+        ${activeAccounts
+          .map(
+            (account) => `
+              <div class="account-row">
+                <div>
+                  <div class="name">${escapeHtml(account.name)}</div>
+                  <div class="prev num">${prevBalance(account.id) === "" ? "이전 기록 없음" : `지난 결산 ${money(prevBalance(account.id))}`}</div>
+                </div>
+                <input inputmode="numeric" name="acc-${account.id}" value="${prevBalance(account.id)}" placeholder="잔고" />
+              </div>
+            `,
+          )
+          .join("")}
+        <div class="settle-total"><span>합계</span><strong class="num" data-settle-total>0원</strong></div>
+        <button class="primary-button" type="submit">결산 저장</button>
+      </form>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+
+  const form = modal.querySelector("[data-settle-form]");
+  const totalEl = modal.querySelector("[data-settle-total]");
+  const updateTotal = () => {
+    const total = activeAccounts.reduce((sum, account) => sum + (numberFromInput(form.elements[`acc-${account.id}`].value) || 0), 0);
+    totalEl.textContent = money(total);
+    return total;
+  };
+  form.addEventListener("input", updateTotal);
+  updateTotal();
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const balances = activeAccounts.map((account) => ({
+      accountId: account.id,
+      amount: numberFromInput(form.elements[`acc-${account.id}`].value) || 0,
+    }));
+    const total = balances.reduce((sum, b) => sum + b.amount, 0);
+    if (total <= 0) return;
+    const settlement = {
+      id: cryptoId(),
+      month: m.currentMonth,
+      date: localDateString(m.today),
+      balances,
+      total,
+      requiredSaving: Math.round(m.requiredSaving),
+      monthlyIncome: Number(state.settings.monthlyIncome || 0),
+    };
+    state = {
+      ...state,
+      // 같은 달 재결산은 교체
+      settlements: [...state.settlements.filter((st) => st.month !== m.currentMonth), settlement],
+      toast: "결산 저장 완료",
+    };
+    saveState();
+    modal.remove();
+    render();
+    clearToastSoon();
+    openReportSheet(settlement);
+  });
+}
+
+/* ---------- 월간 보고서 ---------- */
+
+function openReportSheet(settlement) {
+  const others = state.settlements.filter((st) => st.month < settlement.month);
+  const prev = others.slice().sort((a, b) => a.month.localeCompare(b.month)).at(-1) || null;
+  const gap = prev ? Math.max(1, monthDiff(prev.month, settlement.month)) : 0;
+  const delta = prev ? (settlement.total - prev.total) / gap : null;
+  const required = Number(settlement.requiredSaving || 0);
+  const income = Number(settlement.monthlyIncome || 0);
+  const m = getMetrics(state);
+  const arrivalText = m.arrival ? `${m.arrival.getFullYear()}년 ${m.arrival.getMonth() + 1}월` : "속도 부족";
+  const [year, monthNum] = settlement.month.split("-");
+
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">${Number(monthNum)}월 운용 보고서</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <p class="hero-label">${year}년 ${Number(monthNum)}월 자산</p>
+      <p class="report-headline num">${readableMoney(settlement.total)}</p>
+      ${
+        prev
+          ? `
+            <div class="section">
+              <div class="report-line"><span>지난 결산 대비</span><strong class="num">${signedMoney(Math.round(delta * gap))}${gap > 1 ? ` (${gap}개월)` : ""}</strong></div>
+              <div class="report-line"><span>월평균 저축</span><strong class="num">${signedMoney(Math.round(delta))}</strong></div>
+              <div class="report-line"><span>필요 월저축</span><strong class="num">${money(required)}</strong></div>
+              ${income > 0 ? `<div class="report-line"><span>저축률</span><strong class="num">${((delta / income) * 100).toFixed(1)}%</strong></div>` : ""}
+              <div class="report-line"><span>도착 예상</span><strong class="num">${arrivalText}</strong></div>
+            </div>
+            <p class="report-verdict ${delta >= required ? "" : "miss"}">
+              ${delta >= required
+                ? `목표 페이스 대비 ${signedMoney(Math.round(delta - required))} · 페이스 유지 중`
+                : `목표 페이스까지 월 ${money(Math.round(required - delta))} 부족`}
+            </p>
+          `
+          : `<p class="empty-state">첫 결산입니다. 다음 결산부터 증감과 페이스가 계산됩니다.</p>`
+      }
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+}
+
 /* ---------- 이벤트 바인딩 + 부트스트랩 ---------- */
 
 function bindEvents(metrics) {
@@ -485,8 +649,6 @@ function renderFlow() { return renderHeader(); }
 function bindFlowEvents() {}
 function renderSettings() { return renderHeader(); }
 function bindSettingsEvents() {}
-function openSpeedSheet() {}
-function openSettleSheet() {}
 
 let state = applyFixedItems(loadState());
 saveState();
