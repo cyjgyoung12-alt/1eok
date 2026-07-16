@@ -648,7 +648,7 @@ function bindEvents(metrics) {
 /* ---------- 기록 탭 ---------- */
 
 function renderRecord(m) {
-  const recent = state.transactions.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 20);
+  const recent = state.transactions.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
   return `
     ${renderHeader()}
     <section class="quick-actions">
@@ -783,7 +783,7 @@ function renderSettings(m) {
         <form class="form-grid" data-settings-form>
           <div class="field"><label for="targetAmount">목표 금액</label><input id="targetAmount" name="targetAmount" inputmode="numeric" value="${state.settings.targetAmount}" /></div>
           <div class="two-col">
-            <div class="field"><label for="targetDate">목표일</label><input id="targetDate" name="targetDate" type="date" value="${state.settings.targetDate}" /></div>
+            <div class="field"><label for="targetDate">목표일</label><input id="targetDate" name="targetDate" type="date" value="${escapeHtml(state.settings.targetDate)}" /></div>
             <div class="field"><label for="monthlyIncome">월 수입</label><input id="monthlyIncome" name="monthlyIncome" inputmode="numeric" value="${state.settings.monthlyIncome}" /></div>
           </div>
           <button class="primary-button" type="submit">목표 저장</button>
@@ -1080,7 +1080,14 @@ function bindOnboarding() {
       accounts.push({ id, name, order: accounts.length, active: true });
       balances.push({ accountId: id, amount: amounts[index] });
     });
-    if (!accounts.length) return;
+    if (!accounts.length) {
+      const toastEl = document.createElement("div");
+      toastEl.className = "toast";
+      toastEl.textContent = "계좌를 1개 이상 입력해 주세요.";
+      document.body.appendChild(toastEl);
+      window.setTimeout(() => toastEl.remove(), 2400);
+      return;
+    }
 
     const form = new FormData(formEl);
     const targetAmount = numberFromInput(form.get("targetAmount")) || 100000000;
