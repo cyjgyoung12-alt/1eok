@@ -50,7 +50,11 @@ function loadState() {
 
 function saveState() {
   const { toast, ...persisted } = state;
-  localStorage.setItem(STORE_KEY, JSON.stringify(persisted));
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(persisted));
+  } catch {
+    // 저장 실패(시크릿 모드·쿼터 초과)여도 앱은 계속 동작해야 한다
+  }
 }
 
 function setState(next) {
@@ -355,6 +359,8 @@ function openTransactionSheet(type) {
 
 /* ---------- 유틸 ---------- */
 
+let toastTimer = 0;
+
 function bindSheetClose(modal) {
   modal.querySelector("[data-close-sheet]").addEventListener("click", () => modal.remove());
   modal.addEventListener("click", (event) => {
@@ -401,7 +407,8 @@ function escapeHtml(value) {
 }
 
 function clearToastSoon() {
-  window.setTimeout(() => {
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
     state.toast = "";
     render();
   }, 2400);
