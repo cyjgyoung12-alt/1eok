@@ -95,7 +95,18 @@ CLAUDE.md       Claude Code 작업 지침
 
 ## 배포
 
-GitHub Pages: (Task 8에서 URL 기입)
+GitHub Pages: https://cyjgyoung12-alt.github.io/1eok/
+
+배포 절차 (변경사항이 있을 때):
+
+```bash
+# 1. sw.js의 CACHE 버전을 올린다 (예: eok-v1 → eok-v2) — 안 올리면 설치된 앱에 갱신이 전파되지 않음
+# 2. main과 gh-pages 두 브랜치 모두 푸시 (Pages는 gh-pages 브랜치를 서빙)
+git push origin main
+git push origin main:gh-pages --force-with-lease
+```
+
+폰 설치: 배포 URL 접속 → 아이폰 Safari는 공유 버튼 → "홈 화면에 추가", 안드로이드 Chrome은 메뉴 → "홈 화면에 추가".
 
 ## 데이터 주의
 
