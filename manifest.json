@@ -1,0 +1,9 @@
+{
+  "name": "1억 모으기",
+  "short_name": "1억",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f7f8fa",
+  "theme_color": "#f7f8fa",
+  "orientation": "portrait"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "one-hundred-million-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "모바일 앱형 1억 모으기 목표 대시보드",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "check": "node --check app.js"
+  }
+}
