@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>온보딩 레이아웃 에디터 v3</title>
+<style>
+  body { margin: 0; background: #16181d; color: #e8eaee; font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; padding: 28px 20px 60px; }
+  h1 { font-size: 17px; margin: 0 0 6px; }
+  .hint { font-size: 12px; color: #9aa2af; margin: 0 0 24px; line-height: 1.6; }
+  .hint b { color: #3ce8a4; }
+  .stage { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start; justify-content: center; }
+
+  .card {
+    width: 330px; height: 560px; overflow: hidden;
+    background: #12151a; border: 1px solid #2e333c; border-radius: 12px;
+    padding: 34px 26px 28px; position: relative;
+  }
+  .card.finale { border-color: rgba(60,232,164,0.5); }
+  .card-name { text-align: center; font-size: 11px; color: #5c6470; margin-bottom: 14px; }
+
+  .sec { position: relative; cursor: grab; transition: background 0.15s; border-radius: 6px; touch-action: none; }
+  .sec:hover { background: rgba(60,232,164,0.05); outline: 1px dashed rgba(60,232,164,0.35); }
+  .sec.dragging { cursor: grabbing; background: rgba(60,232,164,0.08); outline: 1px dashed #3ce8a4; }
+  .badge {
+    position: absolute; left: -78px; top: -9px; width: 66px; text-align: right;
+    font-size: 10px; color: #3ce8a4; font-variant-numeric: tabular-nums;
+    opacity: 0; transition: opacity 0.15s; pointer-events: none; white-space: nowrap;
+  }
+  .sec.dragging .badge, .sec:hover .badge { opacity: 1; }
+
+  .dots { display: flex; gap: 7px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: #2e333c; }
+  .dot.on { background: #3ce8a4; }
+  .q { font-size: 19px; font-weight: 800; letter-spacing: -0.2px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; padding: 13px 0 11px; border-bottom: 1px solid #1c2027; }
+  .row .k { font-size: 13px; color: #8b93a1; }
+  .row .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .seg { display: flex; gap: 24px; }
+  .seg span { font-size: 15px; color: #5c6470; }
+  .seg .on { color: #3ce8a4; font-weight: 800; }
+  .fb { font-size: 13px; color: #3ce8a4; }
+  .cta { text-align: right; font-size: 15px; font-weight: 700; }
+  .fin-label { font-size: 13px; color: #8b93a1; text-align: center; }
+  .fin-num { font-size: 40px; font-weight: 800; text-align: center; background: linear-gradient(90deg, #fff 20%, #3ce8a4 85%); -webkit-background-clip: text; background-clip: text; color: transparent; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  .fin-sub { font-size: 13px; color: #5c6470; text-align: center; line-height: 1.7; }
+  .fin-btn { background: #3ce8a4; color: #06281b; border-radius: 8px; text-align: center; padding: 14px 0; font-size: 15px; font-weight: 800; }
+
+  .panel { width: 260px; background: #12151a; border: 1px solid #22262e; border-radius: 12px; padding: 18px; }
+  .panel h2 { font-size: 12px; margin: 0 0 12px; color: #8b93a1; font-weight: 700; }
+  .gap-line { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; color: #9aa2af; }
+  .gap-line b { color: #e8eaee; font-variant-numeric: tabular-nums; }
+  .btns { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .confirm { background: #3ce8a4; color: #06281b; border: 0; border-radius: 8px; padding: 12px 0; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; }
+  .reset { background: none; border: 1px solid #2e333c; color: #8b93a1; border-radius: 8px; padding: 9px 0; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .saved { margin-top: 10px; font-size: 11px; color: #3ce8a4; text-align: center; min-height: 16px; }
+</style>
+</head>
+<body>
+  <h1>온보딩 레이아웃 에디터 v3</h1>
+  <p class="hint"><b>위아래 드래그</b> = 위쪽 간격 조절 (아래 섹션이 따라 움직이는 건 간격이라 정상). <b>좌우 드래그</b> = 가로 위치 이동. 카드 높이는 고정이라 카드가 출렁이지 않습니다. 다 잡으면 <b>"이 배치로 확정"</b> 클릭.</p>
+
+  <div class="stage">
+
+    <div class="card" id="card-step2">
+      <div class="card-name">STEP 2</div>
+      <div class="sec" data-name="점" data-gap="0" data-dx="0"><span class="badge"></span><div class="dots"><div class="dot on"></div><div class="dot on"></div><div class="dot"></div></div></div>
+      <div class="sec" data-name="질문" data-gap="40" data-dx="0"><span class="badge"></span><div class="q">1억 달성 시점은?</div></div>
+      <div class="sec" data-name="목표금액" data-gap="40" data-dx="0"><span class="badge"></span><div class="row"><span class="k">목표 금액</span><span class="v">100,000,000</span></div></div>
+      <div class="sec" data-name="시점선택" data-gap="22" data-dx="0"><span class="badge"></span><div class="seg"><span>3년</span><span class="on">5년</span><span>2030년</span><span>직접</span></div></div>
+      <div class="sec" data-name="피드백" data-gap="46" data-dx="0"><span class="badge"></span><div class="fb">매달 122만원 페이스가 필요해요</div></div>
+      <div class="sec" data-name="다음버튼" data-gap="38" data-dx="0"><span class="badge"></span><div class="cta">다음 →</div></div>
+    </div>
+
+    <div class="card finale" id="card-finale">
+      <div class="card-name">피날레</div>
+      <div class="sec" data-name="라벨" data-gap="8" data-dx="0"><span class="badge"></span><div class="fin-label">오늘 쓸 수 있는 돈</div></div>
+      <div class="sec" data-name="금액" data-gap="16" data-dx="0"><span class="badge"></span><div class="fin-num">40,000원</div></div>
+      <div class="sec" data-name="문장" data-gap="43" data-dx="0"><span class="badge"></span><div class="fin-sub">이 페이스면 2030년 12월에<br>1억 달성합니다.</div></div>
+      <div class="sec" data-name="시작버튼" data-gap="46" data-dx="0"><span class="badge"></span><div class="fin-btn">시작하기</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>현재 값 (앱 px = 표시값 ÷ 1.35)</h2>
+      <div id="readout"></div>
+      <div class="btns">
+        <button class="confirm" id="confirm">이 배치로 확정</button>
+        <button class="reset" id="reset">처음으로 되돌리기</button>
+      </div>
+      <div class="saved" id="saved"></div>
+    </div>
+
+  </div>
+
+<script>
+(function () {
+  const SCALE = 1.35;
+  const defaults = {};
+  const secs = Array.from(document.querySelectorAll(".sec"));
+
+  secs.forEach((sec) => {
+    defaults[key(sec)] = { gap: Number(sec.dataset.gap), dx: 0 };
+    apply(sec);
+    sec.addEventListener("pointerdown", (e) => start(sec, e));
+  });
+
+  function key(sec) { return sec.closest(".card").id + "/" + sec.dataset.name; }
+
+  function apply(sec) {
+    sec.style.marginTop = sec.dataset.gap + "px";
+    sec.style.transform = "translateX(" + sec.dataset.dx + "px)";
+    const dx = Number(sec.dataset.dx);
+    sec.querySelector(".badge").textContent = "↕" + sec.dataset.gap + (dx !== 0 ? " ↔" + (dx > 0 ? "+" : "") + dx : "");
+    updateReadout();
+  }
+
+  function start(sec, e) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startX = e.clientX;
+    const startGap = Number(sec.dataset.gap);
+    const startDx = Number(sec.dataset.dx);
+    sec.classList.add("dragging");
+    sec.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      sec.dataset.gap = Math.max(0, Math.min(110, Math.round(startGap + (ev.clientY - startY))));
+      sec.dataset.dx = Math.max(-80, Math.min(80, Math.round(startDx + (ev.clientX - startX))));
+      apply(sec);
+    };
+    const up = () => {
+      sec.classList.remove("dragging");
+      sec.removeEventListener("pointermove", move);
+      sec.removeEventListener("pointerup", up);
+    };
+    sec.addEventListener("pointermove", move);
+    sec.addEventListener("pointerup", up);
+  }
+
+  function collect() {
+    const out = {};
+    secs.forEach((sec) => {
+      out[key(sec)] = {
+        gap: Number(sec.dataset.gap), gapApp: Math.round(Number(sec.dataset.gap) / SCALE),
+        dx: Number(sec.dataset.dx), dxApp: Math.round(Number(sec.dataset.dx) / SCALE),
+      };
+    });
+    return out;
+  }
+
+  function updateReadout() {
+    document.getElementById("readout").innerHTML = secs
+      .filter((sec) => sec.dataset.name !== "점")
+      .map((sec) => {
+        const label = (sec.closest(".card").id === "card-step2" ? "S2" : "끝") + " · " + sec.dataset.name;
+        const dx = Number(sec.dataset.dx);
+        return '<div class="gap-line"><span>' + label + '</span><b>↕' + sec.dataset.gap + (dx !== 0 ? " ↔" + (dx > 0 ? "+" : "") + dx : "") + "</b></div>";
+      })
+      .join("");
+  }
+
+  document.getElementById("reset").addEventListener("click", () => {
+    secs.forEach((sec) => {
+      sec.dataset.gap = defaults[key(sec)].gap;
+      sec.dataset.dx = 0;
+      apply(sec);
+    });
+    document.getElementById("saved").textContent = "";
+  });
+
+  document.getElementById("confirm").addEventListener("click", () => {
+    if (window.brainstorm) {
+      window.brainstorm.choice("onboarding-layout-confirmed", { values: collect() });
+      document.getElementById("saved").textContent = "전송 완료 — 터미널로 돌아가서 알려주세요";
+    } else {
+      document.getElementById("saved").textContent = "전송 실패 — 화면 캡처로 값을 보내주세요";
+    }
+  });
+})();
+</script>
+</body>
+</html>
