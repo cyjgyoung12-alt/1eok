@@ -407,6 +407,15 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
+// 모든 숫자 입력칸(inputmode="numeric")에 실시간 세 자리 콤마 — numberFromInput이 콤마를 걷어내므로 저장 로직과 무관
+document.addEventListener("input", (event) => {
+  const el = event.target;
+  if (!(el instanceof HTMLInputElement) || el.getAttribute("inputmode") !== "numeric") return;
+  const raw = el.value.replace(/[^\d]/g, "");
+  const formatted = raw ? Number(raw).toLocaleString("ko-KR") : "";
+  if (el.value !== formatted) el.value = formatted;
+});
+
 function clearToastSoon() {
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
@@ -523,7 +532,7 @@ function openSettleSheet(m) {
                   <div class="name">${escapeHtml(account.name)}</div>
                   <div class="prev num">${prevBalance(account.id) === "" ? "이전 기록 없음" : `지난 결산 ${money(prevBalance(account.id))}`}</div>
                 </div>
-                <input inputmode="numeric" name="acc-${account.id}" value="${prevBalance(account.id)}" placeholder="잔고" />
+                <input inputmode="numeric" name="acc-${account.id}" value="${prevBalance(account.id) === "" ? "" : Number(prevBalance(account.id)).toLocaleString("ko-KR")}" placeholder="잔고" />
               </div>
             `,
           )
@@ -797,10 +806,10 @@ function renderSettings(m) {
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">목표</h2><span class="section-note num">현재 ${m.progress.toFixed(1)}%</span></div>
         <form class="form-grid" data-settings-form>
-          <div class="field"><label for="targetAmount">목표 금액</label><input id="targetAmount" name="targetAmount" inputmode="numeric" value="${state.settings.targetAmount}" /></div>
+          <div class="field"><label for="targetAmount">목표 금액</label><input id="targetAmount" name="targetAmount" inputmode="numeric" value="${Number(state.settings.targetAmount || 0).toLocaleString("ko-KR")}" /></div>
           <div class="two-col">
             <div class="field"><label for="targetDate">목표일</label><input id="targetDate" name="targetDate" type="date" value="${escapeHtml(state.settings.targetDate)}" /></div>
-            <div class="field"><label for="monthlyIncome">월 수입</label><input id="monthlyIncome" name="monthlyIncome" inputmode="numeric" value="${state.settings.monthlyIncome}" /></div>
+            <div class="field"><label for="monthlyIncome">월 수입</label><input id="monthlyIncome" name="monthlyIncome" inputmode="numeric" value="${Number(state.settings.monthlyIncome || 0).toLocaleString("ko-KR")}" /></div>
           </div>
           <button class="primary-button" type="submit">목표 저장</button>
         </form>
