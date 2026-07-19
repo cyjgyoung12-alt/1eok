@@ -185,10 +185,10 @@ function render() {
       ${renderScreen(metrics)}
     </section>
     ${renderNav()}
-    ${state.hasOnboarded ? "" : renderOnboarding()}
     ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
   `;
   bindEvents(metrics);
+  if (!state.hasOnboarded && !document.querySelector(".wizard-backdrop")) openOnboardingWizard();
 }
 
 function renderScreen(metrics) {
@@ -656,7 +656,6 @@ function bindEvents(metrics) {
   });
   document.querySelector("[data-open-speed]")?.addEventListener("click", () => openSpeedSheet(metrics));
   document.querySelector("[data-open-settle]")?.addEventListener("click", () => openSettleSheet(metrics));
-  bindOnboarding();
   bindRecordEvents();
   bindFlowEvents();
   bindSettingsEvents();
@@ -1044,103 +1043,312 @@ async function importData(event) {
   }
 }
 
-/* ---------- 온보딩 ---------- */
+/* ---------- 온보딩 위저드 (3스텝 + 피날레, body 모달, render()와 분리) ---------- */
 
-function renderOnboarding() {
-  return `
-    <div class="modal-backdrop onboarding-backdrop">
-      <section class="sheet onboarding-sheet" role="dialog" aria-modal="true">
-        <div class="sheet-header"><h2 class="sheet-title">3분 세팅</h2></div>
-        <p class="onboarding-copy">계좌 잔고만 넣으면 오늘의 미션이 바로 계산됩니다.</p>
-        <form class="form-grid" data-onboarding-form>
-          <div class="field"><label>계좌와 현재 잔고</label>
-            <div class="form-grid" data-onboard-accounts>
-              <div class="account-row"><input name="accName" placeholder="계좌 이름 (예: 토스뱅크)" /><input name="accAmount" inputmode="numeric" placeholder="잔고" /></div>
-              <div class="account-row"><input name="accName" placeholder="계좌 이름 (예: 키움증권)" /><input name="accAmount" inputmode="numeric" placeholder="잔고" /></div>
-            </div>
-            <button class="ghost-button" type="button" data-add-onboard-account>+ 계좌 더 추가</button>
-          </div>
-          <div class="two-col">
-            <div class="field"><label for="obTarget">목표 금액</label><input id="obTarget" name="targetAmount" inputmode="numeric" value="${state.settings.targetAmount}" /></div>
-            <div class="field"><label for="obDate">목표일</label><input id="obDate" name="targetDate" type="date" value="${escapeHtml(state.settings.targetDate)}" /></div>
-          </div>
-          <div class="two-col">
-            <div class="field"><label for="obIncome">월 수입</label><input id="obIncome" name="monthlyIncome" inputmode="numeric" placeholder="예: 3200000" /></div>
-            <div class="field"><label for="obFixed">월 고정지출 합(선택)</label><input id="obFixed" name="fixedExpense" inputmode="numeric" placeholder="예: 900000" /></div>
-          </div>
-          <button class="primary-button" type="submit">시작하기</button>
-        </form>
+const WIZARD_DEFAULT_TARGET_DATE = "2030-12-31";
+
+function openOnboardingWizard() {
+  const today = new Date();
+  let step = 1; // 1 | 2 | 3 | "finale"
+
+  const accounts = [
+    { name: "", amount: "" },
+    { name: "", amount: "" },
+  ];
+  let targetAmount = state.settings.targetAmount || 100000000;
+  let targetDateMode = state.settings.targetDate && state.settings.targetDate !== WIZARD_DEFAULT_TARGET_DATE ? "custom" : "5y";
+  let targetDate = targetDateMode === "custom" ? state.settings.targetDate : localDateString(addMonths(today, 60));
+  let monthlyIncome = "";
+  let fixedExpense = "";
+
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop wizard-backdrop";
+  document.body.appendChild(modal);
+
+  function accountsTotal() {
+    return accounts.reduce((sum, a) => sum + (numberFromInput(a.amount) || 0), 0);
+  }
+
+  function topHtml(current) {
+    return `
+      <div class="wizard-top">
+        <div class="wizard-dots">
+          ${[1, 2, 3].map((n) => `<span class="wizard-dot ${n <= current ? "active" : ""}"></span>`).join("")}
+        </div>
+        ${current > 1 ? `<button type="button" class="wizard-back" data-wizard-back aria-label="뒤로">←</button>` : ""}
+      </div>
+    `;
+  }
+
+  function accountRowHtml(row, index) {
+    const namePlaceholder = index === 0 ? "계좌 이름 (예: 토스뱅크)" : index === 1 ? "계좌 이름 (예: 키움증권)" : "계좌 이름";
+    return `
+      <div class="wizard-row wizard-account-row">
+        <input class="wizard-row-input name" placeholder="${namePlaceholder}" value="${escapeHtml(row.name)}" data-account-index="${index}" data-field="name" />
+        <input class="wizard-row-input" inputmode="numeric" placeholder="잔고" value="${escapeHtml(row.amount)}" data-account-index="${index}" data-field="amount" />
+      </div>
+    `;
+  }
+
+  function renderStep1() {
+    return `
+      <section class="wizard-card" role="dialog" aria-modal="true">
+        ${topHtml(1)}
+        <h2 class="wizard-question">현재 자산은?</h2>
+        <div data-account-rows>${accounts.map((row, i) => accountRowHtml(row, i)).join("")}</div>
+        <button type="button" class="wizard-add-account" data-wizard-add-account>+ 계좌 추가</button>
+        <p class="wizard-feedback" data-wizard-feedback>현재 자산 ${readableMoney(accountsTotal())}</p>
+        <p class="wizard-inline-warn" data-wizard-warn>이름 있는 계좌를 1개 이상 입력해 주세요.</p>
+        <button type="button" class="wizard-cta" data-wizard-next>다음 →</button>
       </section>
-    </div>
-  `;
-}
+    `;
+  }
 
-function bindOnboarding() {
-  document.querySelector("[data-add-onboard-account]")?.addEventListener("click", () => {
-    const row = document.createElement("div");
-    row.className = "account-row";
-    row.innerHTML = `<input name="accName" placeholder="계좌 이름" /><input name="accAmount" inputmode="numeric" placeholder="잔고" />`;
-    document.querySelector("[data-onboard-accounts]")?.appendChild(row);
-  });
+  function step2Feedback() {
+    const total = accountsTotal();
+    const remaining = Math.max(0, targetAmount - total);
+    if (remaining === 0) return "지금 자산으로 이미 목표에 도달했어요";
+    const required = requiredMonthlySaving(targetAmount, total, targetDate, today);
+    return `매달 ${Math.round(required / 10000).toLocaleString("ko-KR")}만원 페이스가 필요해요`;
+  }
 
-  document.querySelector("[data-onboarding-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formEl = event.currentTarget;
-    const today = new Date();
-    const names = [...formEl.querySelectorAll('input[name="accName"]')].map((el) => el.value.trim());
-    const amounts = [...formEl.querySelectorAll('input[name="accAmount"]')].map((el) => numberFromInput(el.value) || 0);
-    const accounts = [];
-    const balances = [];
-    names.forEach((name, index) => {
-      if (!name) return;
-      const id = cryptoId();
-      accounts.push({ id, name, order: accounts.length, active: true });
-      balances.push({ accountId: id, amount: amounts[index] });
+  function renderStep2() {
+    const segments = [
+      { key: "3y", label: "3년" },
+      { key: "5y", label: "5년" },
+      { key: "2030", label: "2030년" },
+      { key: "custom", label: "직접" },
+    ];
+    return `
+      <section class="wizard-card" role="dialog" aria-modal="true">
+        ${topHtml(2)}
+        <h2 class="wizard-question">1억 달성 시점은?</h2>
+        <div class="wizard-row">
+          <label class="wizard-row-label" for="wizardTargetAmount">목표 금액</label>
+          <input id="wizardTargetAmount" class="wizard-row-input" inputmode="numeric" value="${Number(targetAmount).toLocaleString("ko-KR")}" data-wizard-target-amount />
+        </div>
+        <div class="wizard-segment">
+          ${segments.map((seg) => `<button type="button" class="wizard-segment-item ${targetDateMode === seg.key ? "active" : ""}" data-wizard-mode="${seg.key}">${seg.label}</button>`).join("")}
+        </div>
+        ${
+          targetDateMode === "custom"
+            ? `<div class="wizard-row wizard-date-row"><input type="date" class="wizard-row-input" value="${escapeHtml(targetDate)}" data-wizard-target-date /></div>`
+            : ""
+        }
+        <p class="wizard-feedback" data-wizard-feedback>${step2Feedback()}</p>
+        <button type="button" class="wizard-cta" data-wizard-next>다음 →</button>
+      </section>
+    `;
+  }
+
+  function renderStep3() {
+    return `
+      <section class="wizard-card" role="dialog" aria-modal="true">
+        ${topHtml(3)}
+        <h2 class="wizard-question">한 달 현금흐름은?</h2>
+        <div class="wizard-row">
+          <label class="wizard-row-label" for="wizardMonthlyIncome">월 수입</label>
+          <input id="wizardMonthlyIncome" class="wizard-row-input" inputmode="numeric" placeholder="예: 3200000" value="${escapeHtml(monthlyIncome)}" data-wizard-income />
+        </div>
+        <div class="wizard-row">
+          <label class="wizard-row-label" for="wizardFixedExpense">고정지출 (선택)</label>
+          <input id="wizardFixedExpense" class="wizard-row-input" inputmode="numeric" placeholder="예: 900000" value="${escapeHtml(fixedExpense)}" data-wizard-fixed />
+        </div>
+        <button type="button" class="wizard-cta mint" data-wizard-finale>오늘의 미션 보기 →</button>
+      </section>
+    `;
+  }
+
+  function renderFinale() {
+    const total = accountsTotal();
+    const remaining = Math.max(0, targetAmount - total);
+    const income = numberFromInput(monthlyIncome) || 0;
+    const fixed = numberFromInput(fixedExpense) || 0;
+    const requiredSaving = requiredMonthlySaving(targetAmount, total, targetDate, today);
+    const monthBudget = monthlyVariableBudget(income, fixed, requiredSaving);
+    const daysTotal = daysInMonth(today.getFullYear(), today.getMonth() + 1);
+    const daysLeft = daysTotal - today.getDate() + 1;
+    const todayBudget = Math.round(Math.max(0, monthBudget) / daysLeft);
+    const arrival = arrivalDate(remaining, requiredSaving, today);
+    const arrivalHtml = arrival
+      ? `<p class="wizard-finale-sentence">이 페이스면 ${arrival.getFullYear()}년 ${arrival.getMonth() + 1}월에<br>1억 달성합니다.</p>`
+      : "";
+    const amountHtml =
+      monthBudget > 0
+        ? `<p class="wizard-finale-amount">${todayBudget.toLocaleString("ko-KR")}원</p>`
+        : `<p class="wizard-finale-warn">이 목표일은 현재 수입으로 어렵습니다. 시작 후 설정에서 목표일·월 수입을 조정해 주세요.</p>`;
+    return `
+      <section class="wizard-card wizard-finale" role="dialog" aria-modal="true">
+        <p class="wizard-finale-label">오늘 쓸 수 있는 돈</p>
+        ${amountHtml}
+        ${arrivalHtml}
+        <button type="button" class="wizard-finale-start" data-wizard-start>시작하기</button>
+      </section>
+    `;
+  }
+
+  function paint() {
+    if (step === 1) modal.innerHTML = renderStep1();
+    else if (step === 2) modal.innerHTML = renderStep2();
+    else if (step === 3) modal.innerHTML = renderStep3();
+    else modal.innerHTML = renderFinale();
+    bindStep();
+  }
+
+  function updateFeedback() {
+    const el = modal.querySelector("[data-wizard-feedback]");
+    if (!el) return;
+    el.textContent = step === 1 ? `현재 자산 ${readableMoney(accountsTotal())}` : step2Feedback();
+  }
+
+  function bindAccountRow(row) {
+    row.querySelectorAll("input").forEach((input) => {
+      input.addEventListener("input", () => {
+        const index = Number(input.dataset.accountIndex);
+        const field = input.dataset.field;
+        accounts[index][field] = input.value;
+        if (field === "amount") updateFeedback();
+        if (field === "name") {
+          const warnEl = modal.querySelector("[data-wizard-warn]");
+          if (warnEl && accounts.some((a) => a.name.trim())) warnEl.classList.remove("visible");
+        }
+      });
     });
-    if (!accounts.length) {
-      const toastEl = document.createElement("div");
-      toastEl.className = "toast";
-      toastEl.textContent = "계좌를 1개 이상 입력해 주세요.";
-      document.body.appendChild(toastEl);
-      window.setTimeout(() => toastEl.remove(), 2400);
+  }
+
+  function goStep1Next() {
+    const namedCount = accounts.filter((a) => a.name.trim()).length;
+    if (namedCount === 0) {
+      modal.querySelector("[data-wizard-warn]")?.classList.add("visible");
       return;
     }
+    step = 2;
+    paint();
+  }
 
-    const form = new FormData(formEl);
-    const targetAmount = numberFromInput(form.get("targetAmount")) || 100000000;
-    const targetDate = String(form.get("targetDate") || "2030-12-31");
-    const monthlyIncome = numberFromInput(form.get("monthlyIncome")) || 0;
-    const fixedExpense = numberFromInput(form.get("fixedExpense")) || 0;
+  function goStep2Next() {
+    step = 3;
+    paint();
+  }
+
+  function goFinale() {
+    step = "finale";
+    paint();
+  }
+
+  function goBack() {
+    if (step === 2) step = 1;
+    else if (step === 3) step = 2;
+    paint();
+  }
+
+  function submitWizard() {
+    const newAccounts = [];
+    const balances = [];
+    accounts.forEach((row) => {
+      const name = row.name.trim();
+      if (!name) return;
+      const id = cryptoId();
+      newAccounts.push({ id, name, order: newAccounts.length, active: true });
+      balances.push({ accountId: id, amount: numberFromInput(row.amount) || 0 });
+    });
     const total = balances.reduce((sum, b) => sum + b.amount, 0);
+    const income = numberFromInput(monthlyIncome) || 0;
+    const fixed = numberFromInput(fixedExpense) || 0;
     const requiredSaving = requiredMonthlySaving(targetAmount, total, targetDate, today);
 
     const autoItems = [];
     if (state.fixedItems.length === 0) {
-      if (monthlyIncome > 0) autoItems.push({ id: cryptoId(), type: "income", name: "월급", amount: monthlyIncome, day: 25, category: "급여", active: true, startMonth: monthKey(today) });
-      if (fixedExpense > 0) autoItems.push({ id: cryptoId(), type: "expense", name: "고정비", amount: fixedExpense, day: 1, category: "고정비", active: true, startMonth: monthKey(today) });
+      if (income > 0) autoItems.push({ id: cryptoId(), type: "income", name: "월급", amount: income, day: 25, category: "급여", active: true, startMonth: monthKey(today) });
+      if (fixed > 0) autoItems.push({ id: cryptoId(), type: "expense", name: "고정비", amount: fixed, day: 1, category: "고정비", active: true, startMonth: monthKey(today) });
     }
 
     state = applyFixedItems({
       ...state,
       hasOnboarded: true,
-      settings: { ...state.settings, targetAmount, targetDate, monthlyIncome, startDate: localDateString(today) },
-      accounts,
+      settings: { ...state.settings, targetAmount, targetDate, monthlyIncome: income, startDate: localDateString(today) },
+      accounts: newAccounts,
       settlements: [{
         id: cryptoId(), month: monthKey(today), date: localDateString(today),
-        balances, total, requiredSaving: Math.round(requiredSaving), monthlyIncome,
+        balances, total, requiredSaving: Math.round(requiredSaving), monthlyIncome: income,
       }],
       fixedItems: [...state.fixedItems, ...autoItems],
       toast: "내 숫자로 시작합니다.",
     });
     saveState();
+    modal.remove();
     render();
     clearToastSoon();
+  }
+
+  function bindStep() {
+    modal.querySelector("[data-wizard-back]")?.addEventListener("click", goBack);
+
+    if (step === 1) {
+      modal.querySelectorAll(".wizard-account-row").forEach(bindAccountRow);
+      modal.querySelector("[data-wizard-add-account]")?.addEventListener("click", () => {
+        accounts.push({ name: "", amount: "" });
+        const index = accounts.length - 1;
+        const row = document.createElement("div");
+        row.className = "wizard-row wizard-account-row";
+        row.innerHTML = `
+          <input class="wizard-row-input name" placeholder="계좌 이름" data-account-index="${index}" data-field="name" />
+          <input class="wizard-row-input" inputmode="numeric" placeholder="잔고" data-account-index="${index}" data-field="amount" />
+        `;
+        modal.querySelector("[data-account-rows]")?.appendChild(row);
+        bindAccountRow(row);
+        row.querySelector("input")?.focus();
+      });
+      modal.querySelector("[data-wizard-next]")?.addEventListener("click", goStep1Next);
+    } else if (step === 2) {
+      const amountInput = modal.querySelector("[data-wizard-target-amount]");
+      amountInput?.addEventListener("input", () => {
+        targetAmount = numberFromInput(amountInput.value) || 0;
+        updateFeedback();
+      });
+      modal.querySelectorAll("[data-wizard-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          targetDateMode = button.dataset.wizardMode;
+          if (targetDateMode === "3y") targetDate = localDateString(addMonths(today, 36));
+          else if (targetDateMode === "5y") targetDate = localDateString(addMonths(today, 60));
+          else if (targetDateMode === "2030") targetDate = WIZARD_DEFAULT_TARGET_DATE;
+          paint();
+        });
+      });
+      const dateInput = modal.querySelector("[data-wizard-target-date]");
+      dateInput?.addEventListener("input", () => {
+        targetDate = dateInput.value || targetDate;
+        updateFeedback();
+      });
+      modal.querySelector("[data-wizard-next]")?.addEventListener("click", goStep2Next);
+    } else if (step === 3) {
+      const incomeInput = modal.querySelector("[data-wizard-income]");
+      incomeInput?.addEventListener("input", () => { monthlyIncome = incomeInput.value; });
+      const fixedInput = modal.querySelector("[data-wizard-fixed]");
+      fixedInput?.addEventListener("input", () => { fixedExpense = fixedInput.value; });
+      modal.querySelector("[data-wizard-finale]")?.addEventListener("click", goFinale);
+    } else {
+      modal.querySelector("[data-wizard-start]")?.addEventListener("click", submitWizard);
+    }
+  }
+
+  modal.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (!(event.target instanceof HTMLElement)) return;
+    if (!event.target.matches('input[inputmode="numeric"]')) return;
+    event.preventDefault();
+    if (step === 1) goStep1Next();
+    else if (step === 2) goStep2Next();
+    else if (step === 3) goFinale();
   });
+
+  paint();
 }
 
 let state = applyFixedItems(loadState());
 saveState();
 render();
+if (!state.hasOnboarded && !document.querySelector(".wizard-backdrop")) openOnboardingWizard();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
