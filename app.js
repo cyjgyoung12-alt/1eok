@@ -1125,7 +1125,7 @@ function openOnboardingWizard() {
         <h2 class="wizard-question">1억 달성 시점은?</h2>
         <div class="wizard-row">
           <label class="wizard-row-label" for="wizardTargetAmount">목표 금액</label>
-          <input id="wizardTargetAmount" class="wizard-row-input" inputmode="numeric" value="${targetAmount}" data-wizard-target-amount />
+          <input id="wizardTargetAmount" class="wizard-row-input" inputmode="numeric" value="${Number(targetAmount).toLocaleString("ko-KR")}" data-wizard-target-amount />
         </div>
         <div class="wizard-segment">
           ${segments.map((seg) => `<button type="button" class="wizard-segment-item ${targetDateMode === seg.key ? "active" : ""}" data-wizard-mode="${seg.key}">${seg.label}</button>`).join("")}
