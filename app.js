@@ -798,6 +798,37 @@ function bindFlowEvents() {
 
 /* ---------- 설정 탭 ---------- */
 
+function settingsAccountRowHtml(account, latest) {
+  const found = latest?.balances?.find((b) => b.accountId === account.id);
+  const balanceText = found ? money(Number(found.amount)) : "";
+  return `
+    <button type="button" class="settings-row" data-open-account="${account.id}">
+      <span class="settings-row-main">
+        <span class="${account.active ? "" : "off"}">${escapeHtml(account.name)}</span>
+        ${account.active ? "" : `<span class="sub">꺼짐</span>`}
+      </span>
+      <span class="settings-row-side">
+        ${balanceText ? `<span class="val num">${balanceText}</span>` : ""}<span class="chev">›</span>
+      </span>
+    </button>
+  `;
+}
+
+function settingsFixedRowHtml(item) {
+  return `
+    <button type="button" class="settings-row" data-open-fixed-item="${item.id}">
+      <span class="settings-row-main">
+        <span class="${item.active ? "" : "off"}">${escapeHtml(item.name)}</span>
+        <span class="sub">매월 ${item.day}일${item.active ? "" : " · 꺼짐"}</span>
+      </span>
+      <span class="settings-row-side">
+        <span class="val num ${item.type === "income" ? "income" : ""}">${item.type === "income" ? "+" : "-"}${money(item.amount)}</span>
+        <span class="chev">›</span>
+      </span>
+    </button>
+  `;
+}
+
 function renderSettings(m) {
   const accounts = state.accounts.slice().sort((a, b) => a.order - b.order);
   return `
@@ -816,36 +847,12 @@ function renderSettings(m) {
       </section>
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">계좌</h2><span class="section-note">${accounts.filter((a) => a.active).length}개 활성</span></div>
-        ${accounts
-          .map(
-            (account) => `
-              <div class="money-row">
-                <span>${escapeHtml(account.name)}${account.active ? "" : " · 꺼짐"}</span>
-                <span>
-                  <button class="ghost-button" data-toggle-account="${account.id}">${account.active ? "끄기" : "켜기"}</button>
-                  <button class="ghost-button" data-rename-account="${account.id}">이름</button>
-                  <button class="ghost-button" data-delete-account="${account.id}">삭제</button>
-                </span>
-              </div>`,
-          )
-          .join("")}
+        <div class="settings-list">${accounts.map((account) => settingsAccountRowHtml(account, m.latest)).join("")}</div>
         <button class="secondary-button" data-add-account>계좌 추가</button>
       </section>
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">고정 항목</h2><span class="section-note">매달 자동 기록</span></div>
-        ${state.fixedItems
-          .map(
-            (item) => `
-              <div class="money-row">
-                <span>${escapeHtml(item.name)} · 매월 ${item.day}일${item.active ? "" : " · 꺼짐"}</span>
-                <span>
-                  <strong class="num">${item.type === "income" ? "+" : "-"}${money(item.amount)}</strong>
-                  <button class="ghost-button" data-toggle-fixed="${item.id}">${item.active ? "끄기" : "켜기"}</button>
-                  <button class="ghost-button" data-delete-fixed="${item.id}">삭제</button>
-                </span>
-              </div>`,
-          )
-          .join("")}
+        <div class="settings-list">${state.fixedItems.map((item) => settingsFixedRowHtml(item)).join("")}</div>
         <button class="secondary-button" data-open-fixed>고정 항목 추가</button>
       </section>
       <section class="card">
@@ -888,53 +895,18 @@ function bindSettingsEvents() {
     }));
     clearToastSoon();
   });
-  document.querySelectorAll("[data-rename-account]").forEach((button) => {
+  document.querySelectorAll("[data-open-account]").forEach((button) => {
     button.addEventListener("click", () => {
-      const account = state.accounts.find((a) => a.id === button.dataset.renameAccount);
-      const name = window.prompt("새 이름", account?.name || "");
-      if (!name?.trim()) return;
-      setState((prev) => ({
-        ...prev,
-        accounts: prev.accounts.map((a) => (a.id === button.dataset.renameAccount ? { ...a, name: name.trim() } : a)),
-      }));
-    });
-  });
-  document.querySelectorAll("[data-toggle-account]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setState((prev) => ({
-        ...prev,
-        accounts: prev.accounts.map((a) => (a.id === button.dataset.toggleAccount ? { ...a, active: !a.active } : a)),
-      }));
-    });
-  });
-  document.querySelectorAll("[data-delete-account]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!window.confirm("계좌를 삭제할까요? 과거 결산 기록은 유지됩니다.")) return;
-      setState((prev) => ({
-        ...prev,
-        accounts: prev.accounts.filter((a) => a.id !== button.dataset.deleteAccount),
-      }));
+      const account = state.accounts.find((a) => a.id === button.dataset.openAccount);
+      if (account) openAccountManageSheet(account);
     });
   });
 
   document.querySelector("[data-open-fixed]")?.addEventListener("click", openFixedSheet);
-  document.querySelectorAll("[data-toggle-fixed]").forEach((button) => {
+  document.querySelectorAll("[data-open-fixed-item]").forEach((button) => {
     button.addEventListener("click", () => {
-      const next = {
-        ...state,
-        fixedItems: state.fixedItems.map((item) => (item.id === button.dataset.toggleFixed ? { ...item, active: !item.active } : item)),
-      };
-      state = applyFixedItems(next);
-      saveState();
-      render();
-    });
-  });
-  document.querySelectorAll("[data-delete-fixed]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setState((prev) => ({
-        ...prev,
-        fixedItems: prev.fixedItems.filter((item) => item.id !== button.dataset.deleteFixed),
-      }));
+      const item = state.fixedItems.find((it) => it.id === button.dataset.openFixedItem);
+      if (item) openFixedManageSheet(item);
     });
   });
 
@@ -995,6 +967,90 @@ function openFixedSheet() {
     modal.remove();
     render();
     clearToastSoon();
+  });
+}
+
+/* ---------- 계좌/고정 항목 관리 시트 (행 탭 → 액션 스택) ---------- */
+
+function openAccountManageSheet(account) {
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">${escapeHtml(account.name)}</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <div class="form-grid">
+        <button class="secondary-button" data-manage-rename>이름 변경</button>
+        <button class="secondary-button" data-manage-toggle>${account.active ? "끄기" : "켜기"}</button>
+        <button class="danger-button" data-manage-delete>삭제</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+
+  modal.querySelector("[data-manage-rename]").addEventListener("click", () => {
+    const name = window.prompt("새 이름", account.name || "");
+    if (!name?.trim()) return;
+    setState((prev) => ({
+      ...prev,
+      accounts: prev.accounts.map((a) => (a.id === account.id ? { ...a, name: name.trim() } : a)),
+    }));
+    modal.remove();
+  });
+  modal.querySelector("[data-manage-toggle]").addEventListener("click", () => {
+    setState((prev) => ({
+      ...prev,
+      accounts: prev.accounts.map((a) => (a.id === account.id ? { ...a, active: !a.active } : a)),
+    }));
+    modal.remove();
+  });
+  modal.querySelector("[data-manage-delete]").addEventListener("click", () => {
+    if (!window.confirm("계좌를 삭제할까요? 과거 결산 기록은 유지됩니다.")) return;
+    setState((prev) => ({
+      ...prev,
+      accounts: prev.accounts.filter((a) => a.id !== account.id),
+    }));
+    modal.remove();
+  });
+}
+
+function openFixedManageSheet(item) {
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">${escapeHtml(item.name)}</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <div class="form-grid">
+        <button class="secondary-button" data-manage-toggle>${item.active ? "끄기" : "켜기"}</button>
+        <button class="danger-button" data-manage-delete>삭제</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+
+  modal.querySelector("[data-manage-toggle]").addEventListener("click", () => {
+    const next = {
+      ...state,
+      fixedItems: state.fixedItems.map((it) => (it.id === item.id ? { ...it, active: !it.active } : it)),
+    };
+    state = applyFixedItems(next);
+    saveState();
+    modal.remove();
+    render();
+  });
+  modal.querySelector("[data-manage-delete]").addEventListener("click", () => {
+    setState((prev) => ({
+      ...prev,
+      fixedItems: prev.fixedItems.filter((it) => it.id !== item.id),
+    }));
+    modal.remove();
   });
 }
 
