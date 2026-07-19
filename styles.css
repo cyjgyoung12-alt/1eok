@@ -25,8 +25,17 @@ input, select {
 input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--mint); }
 
 .app-shell { width: min(100%, 430px); min-height: 100dvh; margin: 0 auto; position: relative; }
-.screen { min-height: 100dvh; padding: 18px 16px calc(84px + env(safe-area-inset-bottom)); }
-.screen-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.screen { min-height: 100dvh; padding: 10px 16px calc(84px + env(safe-area-inset-bottom)); }
+.screen-header {
+  position: sticky; top: 0; z-index: 15;
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 0 -16px 14px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  background: rgba(11, 13, 16, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
 .title { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
 .date-pill { font-size: 12px; color: var(--muted); border: 1px solid var(--line); background: var(--card); padding: 6px 9px; border-radius: 8px; }
 
@@ -79,6 +88,21 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .money-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; }
 .money-row span { color: var(--muted); }
 .empty-state { padding: 18px 0; text-align: center; color: var(--faint); font-size: 12px; }
+
+/* 설정 리스트 (TDS식 위계 행) */
+.settings-row {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%; padding: 14px 0; font-size: 15px; text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row .off { color: var(--muted); }
+.settings-row-main { display: flex; flex-direction: column; }
+.settings-row-side { display: flex; align-items: center; }
+.settings-row .sub { font-size: 13px; color: var(--faint); margin-top: 2px; }
+.settings-row .val { font-size: 15px; font-weight: 600; }
+.settings-row .val.income { color: var(--mint); }
+.settings-row .chev { color: var(--faint); margin-left: 8px; font-size: 13px; }
 
 .transaction-list { display: flex; flex-direction: column; gap: 8px; }
 .transaction-item { display: flex; justify-content: space-between; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; }
