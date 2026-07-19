@@ -158,7 +158,7 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
   font-variant-numeric: tabular-nums; background: none; border: none; padding: 0;
   border-radius: 0; color: var(--text);
 }
-.wizard-row-input::placeholder { color: var(--faint); font-weight: 400; }
+.wizard-row-input::placeholder { color: var(--faint); font-weight: 400; font-size: 13px; }
 .wizard-row-input.name { text-align: left; font-size: 13px; font-weight: 400; color: var(--muted); }
 .wizard-row-input:focus { outline: none; border: none; }
 .wizard-account-row .wizard-row-input.name { flex: 1.3; }
