@@ -1058,6 +1058,7 @@ function openOnboardingWizard() {
   let targetAmount = state.settings.targetAmount || 100000000;
   let targetDateMode = state.settings.targetDate && state.settings.targetDate !== WIZARD_DEFAULT_TARGET_DATE ? "custom" : "5y";
   let targetDate = targetDateMode === "custom" ? state.settings.targetDate : localDateString(addMonths(today, 60));
+  let monthlySaving = "";
   let monthlyIncome = "";
   let fixedExpense = "";
 
@@ -1107,9 +1108,17 @@ function openOnboardingWizard() {
   function step2Feedback() {
     const total = accountsTotal();
     const remaining = Math.max(0, targetAmount - total);
-    if (remaining === 0) return "지금 자산으로 이미 목표에 도달했어요";
+    if (remaining === 0) return { text: "지금 자산으로 이미 목표에 도달했어요", muted: false };
+    if (targetDateMode === "bySaving") {
+      const saving = numberFromInput(monthlySaving) || 0;
+      if (saving <= 0) return { text: "월 저축액을 입력해 주세요", muted: true };
+      const arrival = arrivalDate(remaining, saving, today);
+      return arrival
+        ? { text: `이 저축이면 ${arrival.getFullYear()}년 ${arrival.getMonth() + 1}월에 1억 달성해요`, muted: false }
+        : { text: "월 저축액을 입력해 주세요", muted: true };
+    }
     const required = requiredMonthlySaving(targetAmount, total, targetDate, today);
-    return `매달 ${Math.round(required / 10000).toLocaleString("ko-KR")}만원 페이스가 필요해요`;
+    return { text: `매달 ${Math.round(required / 10000).toLocaleString("ko-KR")}만원 페이스가 필요해요`, muted: false };
   }
 
   function renderStep2() {
@@ -1118,7 +1127,9 @@ function openOnboardingWizard() {
       { key: "5y", label: "5년" },
       { key: "2030", label: "2030년" },
       { key: "custom", label: "직접" },
+      { key: "bySaving", label: "저축액으로" },
     ];
+    const fb = step2Feedback();
     return `
       <section class="wizard-card" role="dialog" aria-modal="true">
         ${topHtml(2)}
@@ -1133,9 +1144,14 @@ function openOnboardingWizard() {
         ${
           targetDateMode === "custom"
             ? `<div class="wizard-row wizard-date-row"><input type="date" class="wizard-row-input" value="${escapeHtml(targetDate)}" data-wizard-target-date /></div>`
-            : ""
+            : targetDateMode === "bySaving"
+              ? `<div class="wizard-row wizard-date-row">
+                  <label class="wizard-row-label" for="wizardMonthlySaving">월 저축액</label>
+                  <input id="wizardMonthlySaving" class="wizard-row-input" inputmode="numeric" placeholder="예: 1,200,000" value="${escapeHtml(monthlySaving)}" data-wizard-monthly-saving />
+                </div>`
+              : ""
         }
-        <p class="wizard-feedback" data-wizard-feedback>${step2Feedback()}</p>
+        <p class="wizard-feedback ${fb.muted ? "muted" : ""}" data-wizard-feedback>${fb.text}</p>
         <button type="button" class="wizard-cta" data-wizard-next>다음 →</button>
       </section>
     `;
@@ -1198,7 +1214,14 @@ function openOnboardingWizard() {
   function updateFeedback() {
     const el = modal.querySelector("[data-wizard-feedback]");
     if (!el) return;
-    el.textContent = step === 1 ? `현재 자산 ${readableMoney(accountsTotal())}` : step2Feedback();
+    if (step === 1) {
+      el.textContent = `현재 자산 ${readableMoney(accountsTotal())}`;
+      el.classList.remove("muted");
+      return;
+    }
+    const fb = step2Feedback();
+    el.textContent = fb.text;
+    el.classList.toggle("muted", fb.muted);
   }
 
   function bindAccountRow(row) {
@@ -1227,6 +1250,20 @@ function openOnboardingWizard() {
   }
 
   function goStep2Next() {
+    if (targetDateMode === "bySaving") {
+      const remaining = Math.max(0, targetAmount - accountsTotal());
+      if (remaining > 0) {
+        const saving = numberFromInput(monthlySaving) || 0;
+        if (saving <= 0) {
+          updateFeedback();
+          return;
+        }
+        const arrival = arrivalDate(remaining, saving, today);
+        if (arrival) targetDate = localDateString(arrival);
+      } else {
+        targetDate = localDateString(today);
+      }
+    }
     step = 3;
     paint();
   }
@@ -1318,6 +1355,11 @@ function openOnboardingWizard() {
       const dateInput = modal.querySelector("[data-wizard-target-date]");
       dateInput?.addEventListener("input", () => {
         targetDate = dateInput.value || targetDate;
+        updateFeedback();
+      });
+      const savingInput = modal.querySelector("[data-wizard-monthly-saving]");
+      savingInput?.addEventListener("input", () => {
+        monthlySaving = savingInput.value;
         updateFeedback();
       });
       modal.querySelector("[data-wizard-next]")?.addEventListener("click", goStep2Next);
