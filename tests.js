@@ -102,6 +102,20 @@ eq("rename tx migrated", renamed.transactions.map((t) => t.category), ["연애",
 eq("rename fixed migrated", renamed.fixedItems[0].category, "연애");
 eq("rename keeps other fields", renamed.transactions[0].id, "t1");
 
+// 늦은 시작: startDay 이전 날들은 하루 몫을 소진한 것으로 처리 (1일 시작 기준)
+const lateStart = L.dailyBudgets(310000, {}, 31, 20);
+approx("late start day20 = month share", lateStart[19].budget, 10000);
+approx("late start pre-start shows share", lateStart[0].budget, 10000);
+eq("late start pre-start unjudged", [lateStart[0].judged, lateStart[0].clear], [false, false]);
+// 시작일 이후 재분배는 정상 동작: 20일 15,000 지출 → 21일 = (310000-190000-15000)/11
+approx("late start redistribution", L.dailyBudgets(310000, { 20: 15000 }, 31, 20)[20].budget, (310000 - 190000 - 15000) / 11);
+// 시작 전 기록이 몫보다 크면 그 기록을 소진액으로 (max)
+approx("late start pre-start big spend", L.dailyBudgets(310000, { 1: 50000 }, 31, 20)[19].budget, (310000 - 50000 - 18 * 10000) / 12);
+// startDay 생략 시 기존 동작 유지 (하위 호환)
+approx("late start default compat", L.dailyBudgets(310000, {}, 31)[19].budget, 310000 / 12);
+// 시작 전 날들은 스트릭 대상 아님
+eq("late start streak skips pre-start", L.missionStreak(L.dailyBudgets(310000, { 20: 5000 }, 31, 20), 20), 1);
+
 // 동기화 방향: 최신 쪽이 이긴다 (LWW)
 eq("sync both missing", L.syncDirection(undefined, undefined), "none");
 eq("sync server empty", L.syncDirection("2026-07-20T10:00:00.000Z", null), "push");

@@ -15,7 +15,7 @@
 }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); }
+body { margin: 0; background: var(--bg); color: var(--text); overscroll-behavior-y: contain; }
 button, input, select { font: inherit; color: inherit; }
 button { border: 0; cursor: pointer; background: none; padding: 0; }
 input, select {
@@ -145,6 +145,21 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .chip.active { border-color: var(--mint); color: var(--mint); }
 .chip-add { border-style: dashed; }
 .wizard-sync-link { margin-top: 10px; width: 100%; background: none; border: 0; color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+
+/* 당겨서 새로고침: #app 밖 고정 요소라 render()와 독립 */
+.ptr {
+  position: fixed; top: env(safe-area-inset-top, 0px); left: 50%; z-index: 60;
+  transform: translate(-50%, -44px); transition: transform 0.15s ease-out;
+  pointer-events: none;
+}
+.ptr.busy { transform: translate(-50%, 16px); }
+.ptr-spinner {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--line-strong); border-top-color: var(--mint);
+  background: var(--card);
+}
+.ptr.busy .ptr-spinner { animation: ptr-spin 0.8s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
 .advanced-fields summary { font-size: 12px; color: var(--faint); cursor: pointer; margin: 2px 0 8px; }
 
 /* 결산 시트 계좌 행 */

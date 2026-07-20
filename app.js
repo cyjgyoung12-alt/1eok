@@ -107,7 +107,10 @@ function getMetrics(currentState) {
 
   const daysTotal = daysInMonth(today.getFullYear(), today.getMonth() + 1);
   const todayDay = today.getDate();
-  const dayResults = dailyBudgets(Math.max(0, monthBudget), spendByDay, daysTotal);
+  // 시작 달에는 시작일 이전 몫을 소진 처리 (1일 시작 기준으로 빡세게)
+  const startDate = s.startDate ? parseDate(s.startDate) : today;
+  const startDay = monthKey(startDate) === currentMonth ? startDate.getDate() : 1;
+  const dayResults = dailyBudgets(Math.max(0, monthBudget), spendByDay, daysTotal, startDay);
   const todayResult = dayResults[todayDay - 1];
   const streak = missionStreak(dayResults, todayDay);
 
@@ -1042,18 +1045,11 @@ function bindSettingsEvents() {
   });
   document.querySelector("[data-sync-now]")?.addEventListener("click", async () => {
     try {
-      const server = await syncPullNow();
-      const direction = syncDirection(state.updatedAt, server?.updatedAt);
-      if (direction === "pull") {
-        applyServerState(server);
-        return;
+      const message = await manualSync();
+      if (message) {
+        setState((prev) => ({ ...prev, toast: message }));
+        clearToastSoon();
       }
-      if (direction === "push") {
-        const { toast, ...persisted } = state;
-        await syncPushNow(persisted);
-      }
-      setState((prev) => ({ ...prev, toast: "동기화 완료 · 최신 상태입니다." }));
-      clearToastSoon();
     } catch {
       window.alert("서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.");
     }
@@ -1296,6 +1292,21 @@ function applyServerState(payload, toastText) {
   clearToastSoon();
 }
 
+// 수동 동기화(버튼·당겨서 새로고침 공용). pull 적용 시 토스트까지 내부 처리하고 null 반환
+async function manualSync() {
+  const server = await syncPullNow();
+  const direction = syncDirection(state.updatedAt, server?.updatedAt);
+  if (direction === "pull") {
+    applyServerState(server);
+    return null;
+  }
+  if (direction === "push") {
+    const { toast, ...persisted } = state;
+    await syncPushNow(persisted);
+  }
+  return "동기화 완료 · 최신 상태";
+}
+
 async function runStartupSync() {
   if (!syncEnabled()) return;
   try {
@@ -1311,6 +1322,75 @@ async function runStartupSync() {
     // 오프라인이면 다음 저장·다음 실행에서 재시도
   }
 }
+
+/* ---------- 당겨서 새로고침 ---------- */
+
+const ptrEl = document.querySelector("[data-ptr]");
+let ptrStartY = null;
+let ptrPull = 0;
+let ptrBusy = false;
+
+function ptrSet(pull) {
+  ptrPull = pull;
+  if (ptrEl && !ptrBusy) ptrEl.style.transform = pull > 0 ? `translate(-50%, ${Math.min(pull, 80) - 44}px)` : "";
+}
+
+async function ptrRefresh() {
+  if (!ptrEl || ptrBusy) return;
+  ptrBusy = true;
+  ptrEl.style.transform = "";
+  ptrEl.classList.add("busy");
+  const minSpin = new Promise((resolve) => setTimeout(resolve, 700));
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    await registration?.update();
+  } catch {
+    // 새 버전 확인 실패는 무시
+  }
+  let message = null;
+  if (!syncEnabled()) {
+    message = syncConfigured() ? "동기화가 꺼져 있습니다." : "서버 설정 대기 중입니다.";
+  } else {
+    try {
+      message = await manualSync();
+    } catch {
+      message = "서버 연결 실패 · 나중에 다시 시도합니다.";
+    }
+  }
+  await minSpin;
+  ptrEl.classList.remove("busy");
+  ptrBusy = false;
+  if (message) {
+    state.toast = message;
+    render();
+    clearToastSoon();
+  }
+}
+
+document.addEventListener("touchstart", (event) => {
+  ptrStartY = null;
+  if (ptrBusy || window.scrollY > 0) return;
+  if (document.querySelector(".modal-backdrop")) return; // 시트·온보딩 열림
+  ptrStartY = event.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener("touchmove", (event) => {
+  if (ptrStartY === null) return;
+  const dy = event.touches[0].clientY - ptrStartY;
+  if (dy <= 0 || window.scrollY > 0) {
+    ptrSet(0);
+    return;
+  }
+  ptrSet(dy * 0.4); // 저항감
+}, { passive: true });
+
+document.addEventListener("touchend", () => {
+  if (ptrStartY === null) return;
+  ptrStartY = null;
+  const triggered = ptrPull >= 48;
+  ptrSet(0);
+  if (triggered) ptrRefresh();
+});
 
 /* ---------- 백업/복원 ---------- */
 
