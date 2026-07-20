@@ -262,6 +262,7 @@ function renderReality(m) {
       <p class="hero-label">1억까지 남은 금액</p>
       <h2 class="hero-money num">${readableMoney(m.remaining)}</h2>
       <p class="hero-sub num">현재 자산 ${readableMoney(m.netWorth)} · 지금 속도로 <b>${arrivalText}</b></p>
+      ${m.requiredSaving > 0 ? `<p class="hero-sub num">필요 월저축 ${money(Math.round(m.requiredSaving))}${Number(state.settings.monthlyIncome || 0) > 0 ? ` · 수입의 ${((m.requiredSaving / Number(state.settings.monthlyIncome)) * 100).toFixed(1)}%` : ""}</p>` : ""}
       <div class="progress-track"><div class="progress-fill plain" style="width:${m.progress}%"></div></div>
       <button class="basis-button" data-open-speed>${m.basisLabel}</button>
     </section>
