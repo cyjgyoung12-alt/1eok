@@ -116,6 +116,31 @@ approx("late start default compat", L.dailyBudgets(310000, {}, 31)[19].budget, 3
 // 시작 전 날들은 스트릭 대상 아님
 eq("late start streak skips pre-start", L.missionStreak(L.dailyBudgets(310000, { 20: 5000 }, 31, 20), 20), 1);
 
+// 포트폴리오 비중: 잔고>0만, 금액 내림차순, % 합 100, 초과분은 '기타' 합산
+const pfAccounts = [
+  { id: "a", name: "국민은행" }, { id: "b", name: "키움증권" }, { id: "c", name: "업비트" },
+];
+const pfShares = L.portfolioShares(
+  [{ accountId: "b", amount: 600000 }, { accountId: "a", amount: 300000 }, { accountId: "c", amount: 100000 }],
+  pfAccounts,
+);
+eq("portfolio order+names", pfShares.map((s) => s.name), ["키움증권", "국민은행", "업비트"]);
+approx("portfolio pct top", pfShares[0].pct, 60);
+approx("portfolio pct sum", pfShares.reduce((sum, s) => sum + s.pct, 0), 100);
+eq("portfolio zero filtered", L.portfolioShares([{ accountId: "a", amount: 0 }], pfAccounts), []);
+eq("portfolio empty", L.portfolioShares([], pfAccounts), []);
+// 삭제된 계좌 잔고는 이름 폴백
+eq("portfolio deleted account", L.portfolioShares([{ accountId: "zz", amount: 100 }], pfAccounts)[0].name, "(삭제된 계좌)");
+// maxSlices 초과분은 '기타'로 합산
+const manyShares = L.portfolioShares(
+  [1, 2, 3, 4, 5, 6, 7].map((n) => ({ accountId: `x${n}`, amount: n * 100 })),
+  [1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `x${n}`, name: `계좌${n}` })),
+  5,
+);
+eq("portfolio folds to 기타", [manyShares.length, manyShares.at(-1).name], [5, "기타"]);
+approx("portfolio 기타 amount", manyShares.at(-1).amount, 100 + 200 + 300); // 하위 3개 합
+approx("portfolio folded pct sum", manyShares.reduce((sum, s) => sum + s.pct, 0), 100);
+
 // 동기화 방향: 최신 쪽이 이긴다 (LWW)
 eq("sync both missing", L.syncDirection(undefined, undefined), "none");
 eq("sync server empty", L.syncDirection("2026-07-20T10:00:00.000Z", null), "push");

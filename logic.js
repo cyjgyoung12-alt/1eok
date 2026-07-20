@@ -136,6 +136,25 @@ function renameCategoryInRecords(transactions, fixedItems, from, to) {
   return { transactions: transactions.map(swap), fixedItems: fixedItems.map(swap) };
 }
 
+// 계좌별 자산 비중: 잔고>0만, 금액 내림차순. maxSlices 초과 시 하위를 "기타"로 합산
+function portfolioShares(balances, accounts, maxSlices = 5) {
+  const rows = balances
+    .map((b) => ({
+      name: accounts.find((a) => a.id === b.accountId)?.name || "(삭제된 계좌)",
+      amount: Number(b.amount || 0),
+    }))
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+  if (total <= 0) return [];
+  const kept = rows.length > maxSlices ? rows.slice(0, maxSlices - 1) : rows;
+  if (rows.length > maxSlices) {
+    const rest = rows.slice(maxSlices - 1);
+    kept.push({ name: "기타", amount: rest.reduce((sum, r) => sum + r.amount, 0) });
+  }
+  return kept.map((r) => ({ ...r, pct: (r.amount / total) * 100 }));
+}
+
 // 동기화 방향 판정(LWW): 파싱 불가한 시각은 없는 것으로 취급
 function syncDirection(localUpdatedAt, serverUpdatedAt) {
   const local = Date.parse(localUpdatedAt || "");
@@ -160,6 +179,6 @@ const api = {
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, arrivalDate,
-  validateNewCategory, renameCategoryInRecords, syncDirection,
+  validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares,
 };
 if (typeof module !== "undefined") module.exports = api;

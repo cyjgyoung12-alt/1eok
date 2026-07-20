@@ -146,6 +146,19 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .chip-add { border-style: dashed; }
 .wizard-sync-link { margin-top: 10px; width: 100%; background: none; border: 0; color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 
+/* 자산 구성 도넛 */
+.portfolio-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.portfolio-donut { position: relative; width: 128px; }
+.portfolio-donut svg { display: block; width: 100%; }
+.portfolio-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.portfolio-center strong { font-size: 13px; }
+.portfolio-center span { font-size: 10px; color: var(--muted); }
+.portfolio-list { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.portfolio-row { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.portfolio-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.portfolio-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.portfolio-pct { color: var(--muted); width: 44px; text-align: right; }
+
 /* 당겨서 새로고침: #app 밖 고정 요소라 render()와 독립 */
 .ptr {
   position: fixed; top: env(safe-area-inset-top, 0px); left: 50%; z-index: 60;

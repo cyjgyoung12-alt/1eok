@@ -767,6 +767,65 @@ function bindRecordEvents() {
 
 /* ---------- 흐름 탭 (보고서 보관함) ---------- */
 
+// dataviz 검증 통과 팔레트: 인접 명도 교차(민트·회색), 배경 #12151a 대비 3:1 이상
+const PORTFOLIO_COLORS = ["#3ce8a4", "#5d6879", "#b7e9d4", "#17936a", "#dfe4ea"];
+
+// 도넛 중앙용 축약 표기: 구멍 폭(약 70px)을 넘지 않게 만원/억 단위로 줄인다
+function compactMoney(value) {
+  const n = Math.round(Number(value || 0));
+  if (n >= 100000000) return `${(n / 100000000).toFixed(n % 100000000 === 0 ? 0 : 1)}억`;
+  if (n >= 10000) return `${Math.round(n / 10000).toLocaleString("ko-KR")}만원`;
+  return `${n.toLocaleString("ko-KR")}원`;
+}
+
+function portfolioCardHtml(m) {
+  const latest = m.latest;
+  if (!latest) return "";
+  const shares = portfolioShares(latest.balances || [], state.accounts, PORTFOLIO_COLORS.length);
+  if (!shares.length) return "";
+  // 중앙 합계는 도넛이 실제로 그리는 양수 잔고 합(음수 잔고가 섞인 과거 데이터와의 모순 방지)
+  const total = shares.reduce((sum, share) => sum + share.amount, 0);
+  const R = 40;
+  const C = 2 * Math.PI * R;
+  const gap = shares.length > 1 ? 2.5 : 0;
+  let offset = 0;
+  const segments = shares
+    .map((share, i) => {
+      const len = (share.pct / 100) * C;
+      // drawn ≤ len 보장: 극소 조각이 원을 한 바퀴 돌아 다른 조각을 덮지 않게 한다(목록에는 항상 표시됨)
+      const drawn = Math.max(0, len - gap);
+      const seg = `<circle r="${R}" cx="60" cy="60" fill="none" stroke="${PORTFOLIO_COLORS[i]}" stroke-width="14" stroke-dasharray="${drawn} ${C - drawn}" stroke-dashoffset="${-offset}" />`;
+      offset += len;
+      return seg;
+    })
+    .join("");
+  const rows = shares
+    .map(
+      (share, i) => `
+        <div class="portfolio-row">
+          <span class="portfolio-dot" style="background:${PORTFOLIO_COLORS[i]}"></span>
+          <span class="portfolio-name">${escapeHtml(share.name)}</span>
+          <strong class="num">${money(share.amount)}</strong>
+          <span class="portfolio-pct num">${share.pct.toFixed(1)}%</span>
+        </div>`,
+    )
+    .join("");
+  return `
+    <section class="card">
+      <div class="section-title-row"><h2 class="section-title">자산 구성</h2><span class="section-note">${Number(latest.month.split("-")[1])}월 결산 기준</span></div>
+      <div class="portfolio-wrap">
+        <div class="portfolio-donut">
+          <svg viewBox="0 0 120 120" role="img" aria-label="계좌별 자산 비중">
+            <g transform="rotate(-90 60 60)">${segments}</g>
+          </svg>
+          <div class="portfolio-center"><strong class="num">${compactMoney(total)}</strong><span>총자산</span></div>
+        </div>
+        <div class="portfolio-list">${rows}</div>
+      </div>
+    </section>
+  `;
+}
+
 function renderFlow(m) {
   const sorted = state.settlements.slice().sort((a, b) => b.month.localeCompare(a.month));
   const deltas = settlementDeltas(state.settlements);
@@ -776,6 +835,7 @@ function renderFlow(m) {
   const maxCategory = Math.max(...categories.map(([, v]) => v), 1);
   return `
     ${renderHeader()}
+    ${portfolioCardHtml(m)}
     <section class="card">
       <div class="section-title-row"><h2 class="section-title">월간 보고서</h2><span class="section-note">${sorted.length}건</span></div>
       ${
