@@ -25,6 +25,7 @@ function defaultState() {
     settlements: [],
     transactions: [],
     fixedItems: [],
+    customCategories: { expense: [], income: [] },
   };
 }
 
@@ -41,6 +42,10 @@ function loadState() {
       settlements: parsed.settlements || [],
       transactions: parsed.transactions || [],
       fixedItems: parsed.fixedItems || [],
+      customCategories: {
+        expense: parsed.customCategories?.expense || [],
+        income: parsed.customCategories?.income || [],
+      },
       toast: "",
     };
   } catch {
@@ -280,9 +285,13 @@ function renderNav() {
 
 /* ---------- 지출/수입 입력 시트 ---------- */
 
+function categoriesFor(type) {
+  const base = type === "income" ? incomeCategories : expenseCategories;
+  return [...base, ...(state.customCategories?.[type] || [])];
+}
+
 function openTransactionSheet(type) {
-  const categories = type === "income" ? incomeCategories : expenseCategories;
-  let selectedCategory = categories[0];
+  let selectedCategory = categoriesFor(type)[0];
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.innerHTML = `
@@ -298,9 +307,7 @@ function openTransactionSheet(type) {
         </div>
         <div class="field">
           <label>카테고리</label>
-          <div class="chips">
-            ${categories.map((name) => `<button class="chip ${name === selectedCategory ? "active" : ""}" type="button" data-pick-category="${name}">${name}</button>`).join("")}
-          </div>
+          <div class="chips" data-category-chips></div>
         </div>
         <details class="advanced-fields">
           <summary>메모·날짜</summary>
@@ -314,13 +321,37 @@ function openTransactionSheet(type) {
   document.body.appendChild(modal);
   bindSheetClose(modal);
   modal.querySelector("#amount")?.focus();
-  modal.querySelectorAll("[data-pick-category]").forEach((button) => {
-    button.addEventListener("click", () => {
-      selectedCategory = button.dataset.pickCategory;
-      modal.querySelectorAll(".chip").forEach((chip) => chip.classList.remove("active"));
-      button.classList.add("active");
+
+  const chipsBox = modal.querySelector("[data-category-chips]");
+  const renderChips = () => {
+    const categories = categoriesFor(type);
+    chipsBox.innerHTML = categories
+      .map((name, i) => `<button class="chip ${name === selectedCategory ? "active" : ""}" type="button" data-pick-category="${i}">${escapeHtml(name)}</button>`)
+      .join("") + `<button class="chip chip-add" type="button" data-add-category>+ 추가</button>`;
+    chipsBox.querySelectorAll("[data-pick-category]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedCategory = categoriesFor(type)[Number(button.dataset.pickCategory)];
+        renderChips();
+      });
     });
-  });
+    chipsBox.querySelector("[data-add-category]").addEventListener("click", () => {
+      const input = window.prompt("새 카테고리 이름 (8자 이내)");
+      if (input === null) return;
+      const name = validateNewCategory(input, categoriesFor(type));
+      if (!name) {
+        window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
+        return;
+      }
+      state = {
+        ...state,
+        customCategories: { ...state.customCategories, [type]: [...(state.customCategories?.[type] || []), name] },
+      };
+      saveState();
+      selectedCategory = name;
+      renderChips();
+    });
+  };
+  renderChips();
   modal.querySelector("[data-transaction-form]").addEventListener("submit", (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -829,6 +860,18 @@ function settingsFixedRowHtml(item) {
   `;
 }
 
+function settingsCategoryRowHtml(type, name, index) {
+  return `
+    <button type="button" class="settings-row" data-cat-type="${type}" data-cat-index="${index}">
+      <span class="settings-row-main">
+        <span>${escapeHtml(name)}</span>
+        <span class="sub">${type === "income" ? "수입" : "지출"}</span>
+      </span>
+      <span class="settings-row-side"><span class="chev">›</span></span>
+    </button>
+  `;
+}
+
 function renderSettings(m) {
   const accounts = state.accounts.slice().sort((a, b) => a.order - b.order);
   return `
@@ -854,6 +897,16 @@ function renderSettings(m) {
         <div class="section-title-row"><h2 class="section-title">고정 항목</h2><span class="section-note">매달 자동 기록</span></div>
         <div class="settings-list">${state.fixedItems.map((item) => settingsFixedRowHtml(item)).join("")}</div>
         <button class="secondary-button" data-open-fixed>고정 항목 추가</button>
+      </section>
+      <section class="card">
+        <div class="section-title-row"><h2 class="section-title">카테고리</h2><span class="section-note">직접 추가한 것만</span></div>
+        ${
+          state.customCategories.expense.length + state.customCategories.income.length
+            ? `<div class="settings-list">${["expense", "income"]
+                .flatMap((type) => state.customCategories[type].map((name, i) => settingsCategoryRowHtml(type, name, i)))
+                .join("")}</div>`
+            : `<p class="empty-state">기록 입력의 ‘+ 추가’ 칩으로 만듭니다.</p>`
+        }
       </section>
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">데이터</h2><span class="section-note">이 기기에 저장</span></div>
@@ -907,6 +960,14 @@ function bindSettingsEvents() {
     button.addEventListener("click", () => {
       const item = state.fixedItems.find((it) => it.id === button.dataset.openFixedItem);
       if (item) openFixedManageSheet(item);
+    });
+  });
+
+  document.querySelectorAll("[data-cat-type]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const type = button.dataset.catType;
+      const name = state.customCategories?.[type]?.[Number(button.dataset.catIndex)];
+      if (name) openCategoryManageSheet(type, name);
     });
   });
 
@@ -1054,6 +1115,63 @@ function openFixedManageSheet(item) {
   });
 }
 
+function openCategoryManageSheet(type, name) {
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">${escapeHtml(name)}</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <div class="form-grid">
+        <button class="secondary-button" data-manage-rename>이름 변경</button>
+        <button class="danger-button" data-manage-delete>삭제</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+
+  modal.querySelector("[data-manage-rename]").addEventListener("click", () => {
+    const input = window.prompt("새 이름 (8자 이내)", name);
+    if (input === null) return;
+    const others = categoriesFor(type).filter((c) => c !== name);
+    const next = validateNewCategory(input, others);
+    if (!next) {
+      window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
+      return;
+    }
+    if (next === name) { modal.remove(); return; }
+    const migrated = renameCategoryInRecords(state.transactions, state.fixedItems, name, next);
+    setState((prev) => ({
+      ...prev,
+      transactions: migrated.transactions,
+      fixedItems: migrated.fixedItems,
+      customCategories: {
+        ...prev.customCategories,
+        [type]: prev.customCategories[type].map((c) => (c === name ? next : c)),
+      },
+      toast: "과거 기록까지 이름을 바꿨습니다.",
+    }));
+    modal.remove();
+    clearToastSoon();
+  });
+  modal.querySelector("[data-manage-delete]").addEventListener("click", () => {
+    if (!window.confirm("카테고리를 삭제할까요? 과거 기록은 그대로 남습니다.")) return;
+    setState((prev) => ({
+      ...prev,
+      customCategories: {
+        ...prev.customCategories,
+        [type]: prev.customCategories[type].filter((c) => c !== name),
+      },
+      toast: "카테고리를 삭제했습니다.",
+    }));
+    modal.remove();
+    clearToastSoon();
+  });
+}
+
 /* ---------- 백업/복원 ---------- */
 
 function exportData() {
@@ -1080,7 +1198,16 @@ async function importData(event) {
     const data = parsed.data || parsed;
     if (Array.isArray(data.settlements)) {
       // v2 백업
-      state = applyFixedItems({ ...defaultState(), ...data, settings: { ...defaultState().settings, ...data.settings }, toast: "백업을 복원했습니다." });
+      state = applyFixedItems({
+        ...defaultState(),
+        ...data,
+        settings: { ...defaultState().settings, ...data.settings },
+        customCategories: {
+          expense: data.customCategories?.expense || [],
+          income: data.customCategories?.income || [],
+        },
+        toast: "백업을 복원했습니다.",
+      });
     } else {
       // v1 백업: 거래·고정항목·목표만 이관, 계좌/결산은 온보딩으로
       state = applyFixedItems({

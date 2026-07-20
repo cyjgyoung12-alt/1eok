@@ -84,5 +84,23 @@ eq("netWorth", L.currentNetWorth({ date: "2026-06-30", total: 25000000 }, txs), 
 eq("arrival", L.localDateString(L.arrivalDate(7342000, 1500000, today)).slice(0, 7), "2026-12"); // ceil(4.89)=5개월
 eq("arrival none", L.arrivalDate(7342000, 0, today), null);
 
+// 카테고리 추가 검증: 공백 정리 후 빈값·8자 초과·중복이면 null
+eq("category valid", L.validateNewCategory(" 데이트 ", ["식비", "기타"]), "데이트");
+eq("category collapses spaces", L.validateNewCategory("배달  음식", ["식비"]), "배달 음식");
+eq("category empty", L.validateNewCategory("   ", ["식비"]), null);
+eq("category too long", L.validateNewCategory("아주아주긴카테고리", ["식비"]), null); // 9자
+eq("category duplicate", L.validateNewCategory("식비", ["식비", "기타"]), null);
+eq("category duplicate after trim", L.validateNewCategory(" 식비 ", ["식비"]), null);
+
+// 카테고리 이름 변경: 과거 거래·고정 항목의 category를 함께 이관
+const renamed = L.renameCategoryInRecords(
+  [{ id: "t1", category: "데이트" }, { id: "t2", category: "식비" }],
+  [{ id: "f1", category: "데이트" }],
+  "데이트", "연애"
+);
+eq("rename tx migrated", renamed.transactions.map((t) => t.category), ["연애", "식비"]);
+eq("rename fixed migrated", renamed.fixedItems[0].category, "연애");
+eq("rename keeps other fields", renamed.transactions[0].id, "t1");
+
 if (failed) { console.error(`\n${failed} test(s) failed`); process.exit(1); }
 console.log("\nall tests passed");

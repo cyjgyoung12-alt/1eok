@@ -114,6 +114,20 @@ function currentNetWorth(latestSettlement, transactions) {
   return Number(latestSettlement.total) + net;
 }
 
+// 공백 정리 후 빈값·8자 초과·중복이면 null, 아니면 정규화된 이름
+function validateNewCategory(rawName, existingNames) {
+  const name = String(rawName || "").trim().replace(/\s+/g, " ");
+  if (!name || name.length > 8) return null;
+  if (existingNames.includes(name)) return null;
+  return name;
+}
+
+// 카테고리 이름 변경 시 과거 거래·고정 항목의 category를 함께 이관
+function renameCategoryInRecords(transactions, fixedItems, from, to) {
+  const swap = (item) => (item.category === from ? { ...item, category: to } : item);
+  return { transactions: transactions.map(swap), fixedItems: fixedItems.map(swap) };
+}
+
 function arrivalDate(remaining, monthlySaving, today) {
   if (!(monthlySaving > 0)) return null;
   return addMonths(today, Math.ceil(remaining / monthlySaving));
@@ -124,5 +138,6 @@ const api = {
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, arrivalDate,
+  validateNewCategory, renameCategoryInRecords,
 };
 if (typeof module !== "undefined") module.exports = api;
