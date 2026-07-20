@@ -539,7 +539,7 @@ function openSpeedSheet(m) {
 
 /* ---------- 결산 시트 ---------- */
 
-function openSettleSheet(m) {
+function openSettleSheet(m, focusAccountId) {
   const activeAccounts = state.accounts.filter((a) => a.active).sort((a, b) => a.order - b.order);
   if (!activeAccounts.length) {
     setState((prev) => ({ ...prev, activeTab: "settings", toast: "먼저 설정에서 계좌를 등록해 주세요." }));
@@ -580,6 +580,7 @@ function openSettleSheet(m) {
   `;
   document.body.appendChild(modal);
   bindSheetClose(modal);
+  if (focusAccountId) modal.querySelector(`[name="acc-${focusAccountId}"]`)?.focus();
 
   const form = modal.querySelector("[data-settle-form]");
   const totalEl = modal.querySelector("[data-settle-total]");
@@ -971,12 +972,15 @@ function bindSettingsEvents() {
   document.querySelector("[data-add-account]")?.addEventListener("click", () => {
     const name = window.prompt("계좌 이름 (예: 토스뱅크)");
     if (!name?.trim()) return;
+    const id = cryptoId();
     setState((prev) => ({
       ...prev,
-      accounts: [...prev.accounts, { id: cryptoId(), name: name.trim(), order: prev.accounts.length, active: true }],
-      toast: "계좌를 추가했습니다.",
+      accounts: [...prev.accounts, { id, name: name.trim(), order: prev.accounts.length, active: true }],
+      toast: "계좌를 추가했습니다. 잔고를 저장하면 자산에 바로 반영됩니다.",
     }));
     clearToastSoon();
+    // 새 계좌 잔고를 그 자리에서 입력받는다: 이번 달 결산 갱신(같은 달은 교체)
+    openSettleSheet(getMetrics(state), id);
   });
   document.querySelectorAll("[data-open-account]").forEach((button) => {
     button.addEventListener("click", () => {
