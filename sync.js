@@ -2,8 +2,8 @@
    SYNC_CONFIG가 비어 있으면 모든 동기화 기능이 조용히 꺼진 상태로 동작한다. */
 
 const SYNC_CONFIG = {
-  url: "", // 예: https://xxxx.supabase.co
-  apiKey: "", // sb_publishable_... (공개 전제 키)
+  url: "https://osnmkexqdcxypqcyqnvd.supabase.co",
+  apiKey: "sb_publishable_V7D8CppriDqsXlIXfSyqXg_s-1Jowuy", // 공개 전제 키
 };
 
 const SYNC_STORE_KEY = "one_hundred_million_sync_v1";
