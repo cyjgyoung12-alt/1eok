@@ -136,6 +136,45 @@ function renameCategoryInRecords(transactions, fixedItems, from, to) {
   return { transactions: transactions.map(swap), fixedItems: fixedItems.map(swap) };
 }
 
+// 이번 달 유효 저축액: 예산 시트의 저축이 필요 월저축보다 클 때만 대체(목표 페이스 보호)
+function effectiveMonthlySaving(requiredSaving, budgetSaving) {
+  const budget = Number(budgetSaving || 0);
+  return budget > requiredSaving ? budget : requiredSaving;
+}
+
+// 봉투별 현황: 카테고리 지출을 합류해 사용액·잔여·초과 계산
+function envelopeStatus(envelopes, spentByCategory) {
+  return envelopes.map((envelope) => {
+    const spent = Number(spentByCategory[envelope.category] || 0);
+    const amount = Number(envelope.amount || 0);
+    return { category: envelope.category, amount, spent, remaining: amount - spent, over: spent > amount };
+  });
+}
+
+// 월급일 이후 & 다음 달 예산 미작성 & 그 달 프롬프트 미해제 → 다음 달 키, 아니면 false
+// 월급일 29~31은 짧은 달의 말일로 클램프(고정 항목 자동 기록과 같은 규칙)
+function shouldPromptBudget(today, paydayDay, budgets, dismissedMonth) {
+  if (!(paydayDay >= 1)) return false;
+  const payday = Math.min(paydayDay, daysInMonth(today.getFullYear(), today.getMonth() + 1));
+  if (today.getDate() < payday) return false;
+  const nextMonth = monthKey(addMonths(new Date(today.getFullYear(), today.getMonth(), 1), 1));
+  if (budgets && budgets[nextMonth]) return false;
+  if (dismissedMonth === nextMonth) return false;
+  return nextMonth;
+}
+
+// 카테고리 이름 변경 시 모든 달의 봉투 카테고리를 함께 이관
+function renameCategoryInBudgets(budgets, from, to) {
+  const next = {};
+  Object.entries(budgets || {}).forEach(([month, budget]) => {
+    next[month] = {
+      ...budget,
+      envelopes: (budget.envelopes || []).map((e) => (e.category === from ? { ...e, category: to } : e)),
+    };
+  });
+  return next;
+}
+
 // 계좌별 자산 비중: 잔고>0만, 금액 내림차순. maxSlices 초과 시 하위를 "기타"로 합산
 function portfolioShares(balances, accounts, maxSlices = 5) {
   const rows = balances
@@ -180,5 +219,6 @@ const api = {
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, arrivalDate,
   validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares,
+  effectiveMonthlySaving, envelopeStatus, shouldPromptBudget, renameCategoryInBudgets,
 };
 if (typeof module !== "undefined") module.exports = api;

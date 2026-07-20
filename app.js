@@ -26,6 +26,8 @@ function defaultState() {
     transactions: [],
     fixedItems: [],
     customCategories: { expense: [], income: [] },
+    budgets: {},
+    budgetPromptDismissed: "",
   };
 }
 
@@ -46,6 +48,8 @@ function loadState() {
         expense: parsed.customCategories?.expense || [],
         income: parsed.customCategories?.income || [],
       },
+      budgets: parsed.budgets || {},
+      budgetPromptDismissed: parsed.budgetPromptDismissed || "",
       toast: "",
     };
   } catch {
@@ -93,7 +97,10 @@ function getMetrics(currentState) {
   const fixedExpenseSum = currentState.fixedItems
     .filter((item) => item.active && item.type === "expense")
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const monthBudget = monthlyVariableBudget(Number(s.monthlyIncome || 0), fixedExpenseSum, requiredSaving);
+  // 이번 달 예산(봉투)의 저축액이 필요 월저축보다 크면 미션 예산이 그만큼 줄어든다
+  const budgetPlan = currentState.budgets?.[currentMonth] || null;
+  const effSaving = effectiveMonthlySaving(requiredSaving, budgetPlan?.saving);
+  const monthBudget = monthlyVariableBudget(Number(s.monthlyIncome || 0), fixedExpenseSum, effSaving);
 
   // 이번 달 변동지출을 일별로 집계 (키 존재 = 그날 기록 있음)
   const spendByDay = {};
@@ -136,12 +143,20 @@ function getMetrics(currentState) {
       acc[tx.category] = (acc[tx.category] || 0) + Number(tx.amount || 0);
       return acc;
     }, {});
+  // 봉투 소진용: 고정비 자동 기록 제외 — 봉투 등식(수입−고정비−저축−봉투)이 고정비를 이미 차감했으므로
+  const variableCategoryExpenses = monthTx
+    .filter((tx) => tx.type === "expense" && tx.source !== "fixed")
+    .reduce((acc, tx) => {
+      acc[tx.category] = (acc[tx.category] || 0) + Number(tx.amount || 0);
+      return acc;
+    }, {});
 
   return {
     today, currentMonth, netWorth, remaining, progress, requiredSaving,
     fixedExpenseSum, monthBudget, dayResults, todayResult, todayDay, streak,
     speed, arrival, basisLabel, settledThisMonth, settleDday, settleStreak,
-    grid, monthIncome, monthExpense, categoryExpenses, latest,
+    grid, monthIncome, monthExpense, categoryExpenses, variableCategoryExpenses,
+    latest, budget: budgetPlan, effectiveSaving: effSaving,
   };
 }
 
@@ -826,6 +841,45 @@ function portfolioCardHtml(m) {
   `;
 }
 
+function budgetCardHtml(m) {
+  const budget = m.budget;
+  // 월급일이 지났고 다음 달 예산이 없으면 수동 진입 버튼 제공(자동 시트를 실수로 닫아도 경로 유지)
+  const payday = state.fixedItems.find((item) => item.active && item.type === "income")?.day || 0;
+  const clampedPayday = payday ? Math.min(payday, daysInMonth(m.today.getFullYear(), m.today.getMonth() + 1)) : 0;
+  const nextMonth = monthKey(addMonths(new Date(m.today.getFullYear(), m.today.getMonth(), 1), 1));
+  const nextButton =
+    clampedPayday >= 1 && m.today.getDate() >= clampedPayday && !state.budgets?.[nextMonth]
+      ? `<button class="secondary-button" data-open-budget="${nextMonth}">${Number(nextMonth.split("-")[1])}월 예산 짜기</button>`
+      : "";
+  if (!budget) {
+    return `
+    <section class="card">
+      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note">미설정</span></div>
+      <button class="secondary-button" data-open-budget="${m.currentMonth}">예산 정하기</button>
+      ${nextButton}
+    </section>`;
+  }
+  const status = envelopeStatus(budget.envelopes || [], m.variableCategoryExpenses);
+  const rows = status
+    .map((s) => {
+      const pct = s.amount > 0 ? Math.min(100, (s.spent / s.amount) * 100) : 0;
+      return `
+      <div class="budget-row">
+        <div class="budget-row-top"><span>${escapeHtml(s.category)}</span><span class="num">${s.over ? `초과 +${money(s.spent - s.amount)}` : `${money(s.remaining)} 남음`}</span></div>
+        <div class="progress-track"><div class="progress-fill plain" style="width:${pct}%"></div></div>
+        <div class="budget-row-sub num">${money(s.spent)} / ${money(s.amount)}</div>
+      </div>`;
+    })
+    .join("");
+  return `
+    <section class="card">
+      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note num">저축 ${money(Math.round(m.effectiveSaving))} · 미션 반영</span></div>
+      ${rows || `<p class="empty-state">봉투가 없습니다. 예산 편집에서 추가하세요.</p>`}
+      <button class="secondary-button" data-open-budget="${m.currentMonth}">예산 편집</button>
+      ${nextButton}
+    </section>`;
+}
+
 function renderFlow(m) {
   const sorted = state.settlements.slice().sort((a, b) => b.month.localeCompare(a.month));
   const deltas = settlementDeltas(state.settlements);
@@ -836,6 +890,7 @@ function renderFlow(m) {
   return `
     ${renderHeader()}
     ${portfolioCardHtml(m)}
+    ${budgetCardHtml(m)}
     <section class="card">
       <div class="section-title-row"><h2 class="section-title">월간 보고서</h2><span class="section-note">${sorted.length}건</span></div>
       ${
@@ -894,6 +949,9 @@ function bindFlowEvents() {
       const settlement = state.settlements.find((st) => st.month === button.dataset.openReport);
       if (settlement) openReportSheet(settlement);
     });
+  });
+  document.querySelectorAll("[data-open-budget]").forEach((button) => {
+    button.addEventListener("click", () => openBudgetSheet(button.dataset.openBudget));
   });
 }
 
@@ -1303,6 +1361,7 @@ function openCategoryManageSheet(type, name) {
       ...prev,
       transactions: migrated.transactions,
       fixedItems: migrated.fixedItems,
+      budgets: renameCategoryInBudgets(prev.budgets, name, next),
       customCategories: {
         ...prev.customCategories,
         [type]: prev.customCategories[type].map((c) => (c === name ? next : c)),
@@ -1382,6 +1441,98 @@ async function runStartupSync() {
   } catch {
     // 오프라인이면 다음 저장·다음 실행에서 재시도
   }
+}
+
+/* ---------- 예산(봉투) 시트 ---------- */
+
+function openBudgetSheet(targetMonth) {
+  const m = getMetrics(state);
+  const monthNum = Number(targetMonth.split("-")[1]);
+  const existing = state.budgets?.[targetMonth] || null;
+  const income = Number(state.settings.monthlyIncome || 0);
+  const fixedSum = m.fixedExpenseSum;
+  const requiredFloor = Math.round(m.requiredSaving);
+  const savingInit = existing?.saving ?? requiredFloor;
+  // 삭제된 카테고리의 기존 봉투도 목록에 포함 — 안 보이는 채로 저장 시 소멸하는 것을 방지
+  const baseCategories = [...expenseCategories, ...(state.customCategories?.expense || [])].filter((c) => c !== "고정비");
+  const orphaned = (existing?.envelopes || []).map((e) => e.category).filter((c) => !baseCategories.includes(c));
+  const categories = [...baseCategories, ...orphaned];
+  const envelopeInit = (category) => existing?.envelopes?.find((e) => e.category === category)?.amount || 0;
+
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <section class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2 class="sheet-title">${monthNum}월 예산</h2>
+        <button class="ghost-button" data-close-sheet>닫기</button>
+      </div>
+      <form class="form-grid" data-budget-form>
+        <div class="money-row"><span>월 수입</span><strong class="num">${money(income)}</strong></div>
+        <div class="money-row"><span>고정비</span><strong class="num">-${money(fixedSum)}</strong></div>
+        <div class="field"><label for="budgetSaving">저축액 · 최소 ${money(requiredFloor)}</label>
+          <input id="budgetSaving" name="saving" inputmode="numeric" value="${Number(savingInit).toLocaleString("ko-KR")}" /></div>
+        ${categories
+          .map(
+            (category, i) => `
+          <div class="field"><label for="budgetEnv${i}">${escapeHtml(category)}</label>
+            <input id="budgetEnv${i}" name="env-${i}" inputmode="numeric" placeholder="봉투 없음" value="${envelopeInit(category) ? Number(envelopeInit(category)).toLocaleString("ko-KR") : ""}" /></div>`,
+          )
+          .join("")}
+        <div class="settle-total"><span>미배분</span><strong class="num" data-budget-left>0원</strong></div>
+        <p class="budget-warn" data-budget-warn>배분이 수입을 넘습니다. 저장은 되지만 미션 예산과 어긋납니다.</p>
+        <button class="primary-button" type="submit">예산 저장</button>
+      </form>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  bindSheetClose(modal);
+
+  const form = modal.querySelector("[data-budget-form]");
+  const leftEl = modal.querySelector("[data-budget-left]");
+  const warnEl = modal.querySelector("[data-budget-warn]");
+  const compute = () => {
+    // 저장 시와 같은 하한 클램프를 적용해 표시 미배분과 실제 저장 계획을 일치시킨다
+    const saving = Math.max(numberFromInput(form.elements.saving.value) || 0, requiredFloor);
+    const envelopeSum = categories.reduce((sum, _, i) => sum + (numberFromInput(form.elements[`env-${i}`].value) || 0), 0);
+    const left = income - fixedSum - saving - envelopeSum;
+    leftEl.textContent = `${left < 0 ? "-" : ""}${money(Math.abs(left))}`;
+    warnEl.classList.toggle("visible", left < 0);
+  };
+  form.addEventListener("input", compute);
+  compute();
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const savingInput = numberFromInput(form.elements.saving.value) || 0;
+    const saving = Math.max(savingInput, requiredFloor);
+    const envelopes = categories
+      .map((category, i) => ({ category, amount: numberFromInput(form.elements[`env-${i}`].value) || 0 }))
+      .filter((envelope) => envelope.amount > 0);
+    setState((prev) => ({
+      ...prev,
+      budgets: { ...prev.budgets, [targetMonth]: { saving, envelopes } },
+      toast:
+        saving > savingInput
+          ? `저축액은 필요 월저축 밑으로 못 내려 ${money(saving)}으로 저장했습니다.`
+          : `${monthNum}월 예산을 저장했습니다.`,
+    }));
+    modal.remove();
+    clearToastSoon();
+  });
+}
+
+// 월급일 이후 앱을 열면 다음 달 예산 시트를 그 달에 한 번 자동으로 띄운다
+function maybePromptBudget() {
+  if (!state.hasOnboarded) return;
+  if (document.querySelector(".modal-backdrop")) return;
+  const payday = state.fixedItems.find((item) => item.active && item.type === "income")?.day || 0;
+  const target = shouldPromptBudget(new Date(), payday, state.budgets, state.budgetPromptDismissed);
+  if (!target) return;
+  state = { ...state, budgetPromptDismissed: target };
+  // 부팅 경로는 updatedAt을 갱신하지 않는다 — 스탬프하면 오래된 기기가 서버의 새 데이터를 덮어쓸 수 있다
+  saveState({ stamp: false });
+  openBudgetSheet(target);
 }
 
 /* ---------- 당겨서 새로고침 ---------- */
@@ -1487,6 +1638,7 @@ async function importData(event) {
           expense: data.customCategories?.expense || [],
           income: data.customCategories?.income || [],
         },
+        budgets: data.budgets || {},
         toast: "백업을 복원했습니다.",
       });
     } else {
@@ -1882,7 +2034,7 @@ let state = applyFixedItems(loadState());
 saveState({ stamp: false });
 render();
 if (!state.hasOnboarded && !document.querySelector(".wizard-backdrop")) openOnboardingWizard();
-runStartupSync();
+runStartupSync().finally(() => maybePromptBudget());
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});

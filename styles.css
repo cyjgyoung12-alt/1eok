@@ -159,6 +159,14 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .portfolio-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .portfolio-pct { color: var(--muted); width: 44px; text-align: right; }
 
+/* 예산(봉투) */
+.budget-row { display: flex; flex-direction: column; gap: 5px; padding: 7px 0; }
+.budget-row-top { display: flex; justify-content: space-between; font-size: 13px; }
+.budget-row-top .num { color: var(--muted); }
+.budget-row-sub { font-size: 11px; color: var(--faint); }
+.budget-warn { display: none; margin: 0; font-size: 12px; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; }
+.budget-warn.visible { display: block; }
+
 /* 당겨서 새로고침: #app 밖 고정 요소라 render()와 독립 */
 .ptr {
   position: fixed; top: env(safe-area-inset-top, 0px); left: 50%; z-index: 60;

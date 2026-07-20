@@ -141,6 +141,38 @@ eq("portfolio folds to 기타", [manyShares.length, manyShares.at(-1).name], [5,
 approx("portfolio 기타 amount", manyShares.at(-1).amount, 100 + 200 + 300); // 하위 3개 합
 approx("portfolio folded pct sum", manyShares.reduce((sum, s) => sum + s.pct, 0), 100);
 
+// 유효 저축액: 예산 저축이 필요 월저축보다 클 때만 대체 (목표 보호)
+eq("effSaving budget higher", L.effectiveMonthlySaving(1297931, 1500000), 1500000);
+eq("effSaving budget lower ignored", L.effectiveMonthlySaving(1297931, 1000000), 1297931);
+eq("effSaving no budget", L.effectiveMonthlySaving(1297931, undefined), 1297931);
+
+// 봉투 현황: 카테고리 지출 합류, 초과 플래그
+const envStatus = L.envelopeStatus(
+  [{ category: "식비", amount: 400000 }, { category: "데이트", amount: 200000 }],
+  { 식비: 450000 },
+);
+eq("envelope over", [envStatus[0].spent, envStatus[0].remaining, envStatus[0].over], [450000, -50000, true]);
+eq("envelope unspent", [envStatus[1].spent, envStatus[1].over], [0, false]);
+
+// 월급날 프롬프트: 월급일 이후 & 다음 달 예산 없음 & 미해제 → 다음 달 키
+const jul25 = new Date(2026, 6, 25);
+eq("prompt after payday", L.shouldPromptBudget(jul25, 25, {}, ""), "2026-08");
+eq("prompt before payday", L.shouldPromptBudget(new Date(2026, 6, 24), 25, {}, ""), false);
+eq("prompt already budgeted", L.shouldPromptBudget(jul25, 25, { "2026-08": { saving: 1 } }, ""), false);
+eq("prompt dismissed", L.shouldPromptBudget(jul25, 25, {}, "2026-08"), false);
+eq("prompt no payday", L.shouldPromptBudget(jul25, 0, {}, ""), false);
+eq("prompt year rollover", L.shouldPromptBudget(new Date(2026, 11, 26), 25, {}, ""), "2027-01");
+// 월급일 31이어도 짧은 달 말일에 프롬프트가 뜬다 (말일 클램프)
+eq("prompt payday clamp 30d month", L.shouldPromptBudget(new Date(2026, 3, 30), 31, {}, ""), "2026-05");
+eq("prompt payday clamp feb", L.shouldPromptBudget(new Date(2027, 1, 28), 30, {}, ""), "2027-03");
+
+// 카테고리 이름 변경 시 봉투도 이관
+const renamedBudgets = L.renameCategoryInBudgets(
+  { "2026-08": { saving: 1, envelopes: [{ category: "데이트", amount: 200000 }, { category: "식비", amount: 1 }] } },
+  "데이트", "연애",
+);
+eq("budget envelope renamed", renamedBudgets["2026-08"].envelopes.map((e) => e.category), ["연애", "식비"]);
+
 // 동기화 방향: 최신 쪽이 이긴다 (LWW)
 eq("sync both missing", L.syncDirection(undefined, undefined), "none");
 eq("sync server empty", L.syncDirection("2026-07-20T10:00:00.000Z", null), "push");
