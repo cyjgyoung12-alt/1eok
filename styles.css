@@ -160,6 +160,8 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .portfolio-pct { color: var(--muted); width: 44px; text-align: right; }
 
 /* 예산(봉투) */
+.budget-card { display: block; width: 100%; text-align: left; cursor: pointer; }
+.budget-row.compact { padding: 5px 0; gap: 4px; }
 .budget-row { display: flex; flex-direction: column; gap: 5px; padding: 7px 0; }
 .budget-row-top { display: flex; justify-content: space-between; font-size: 13px; }
 .budget-row-top .num { color: var(--muted); }

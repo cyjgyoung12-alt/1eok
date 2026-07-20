@@ -264,6 +264,28 @@ function renderMissionCard(m) {
   `;
 }
 
+// 첫 화면 봉투 현황: 봉투가 있는 달에만 표시. 편집은 흐름 탭(카드 탭하면 이동)
+function realityBudgetCardHtml(m) {
+  if (!m.budget || !(m.budget.envelopes || []).length) return "";
+  const status = envelopeStatus(m.budget.envelopes, m.variableCategoryExpenses);
+  const rows = status
+    .map((s) => {
+      const pct = s.amount > 0 ? Math.round((s.spent / s.amount) * 100) : 0;
+      return `
+      <div class="budget-row compact">
+        <div class="budget-row-top"><span>${escapeHtml(s.category)}</span><span class="num">${s.over ? `초과 +${money(s.spent - s.amount)}` : `${pct}% · ${money(s.remaining)} 남음`}</span></div>
+        <div class="progress-track"><div class="progress-fill plain" style="width:${Math.min(100, pct)}%"></div></div>
+      </div>`;
+    })
+    .join("");
+  return `
+    <button type="button" class="section card budget-card" data-goto-flow>
+      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note">편집은 흐름 탭 ›</span></div>
+      ${rows}
+    </button>
+  `;
+}
+
 function renderReality(m) {
   const arrivalText = m.arrival ? `${m.arrival.getFullYear()}년 ${m.arrival.getMonth() + 1}월` : "속도 부족";
   return `
@@ -281,6 +303,7 @@ function renderReality(m) {
       <div class="progress-track"><div class="progress-fill plain" style="width:${m.progress}%"></div></div>
       <button class="basis-button" data-open-speed>${m.basisLabel}</button>
     </section>
+    ${realityBudgetCardHtml(m)}
     <section class="section card">
       <div class="settle-head">
         <p class="hero-label">${m.today.getMonth() + 1}월 결산</p>
@@ -721,6 +744,7 @@ function bindEvents(metrics) {
   });
   document.querySelector("[data-open-speed]")?.addEventListener("click", () => openSpeedSheet(metrics));
   document.querySelector("[data-open-settle]")?.addEventListener("click", () => openSettleSheet(metrics));
+  document.querySelector("[data-goto-flow]")?.addEventListener("click", () => setState((prev) => ({ ...prev, activeTab: "flow" })));
   bindRecordEvents();
   bindFlowEvents();
   bindSettingsEvents();
