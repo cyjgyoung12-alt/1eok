@@ -128,6 +128,20 @@ function renameCategoryInRecords(transactions, fixedItems, from, to) {
   return { transactions: transactions.map(swap), fixedItems: fixedItems.map(swap) };
 }
 
+// 동기화 방향 판정(LWW): 파싱 불가한 시각은 없는 것으로 취급
+function syncDirection(localUpdatedAt, serverUpdatedAt) {
+  const local = Date.parse(localUpdatedAt || "");
+  const server = Date.parse(serverUpdatedAt || "");
+  const hasLocal = Number.isFinite(local);
+  const hasServer = Number.isFinite(server);
+  if (!hasLocal && !hasServer) return "none";
+  if (!hasServer) return "push";
+  if (!hasLocal) return "pull";
+  if (server > local) return "pull";
+  if (local > server) return "push";
+  return "none";
+}
+
 function arrivalDate(remaining, monthlySaving, today) {
   if (!(monthlySaving > 0)) return null;
   return addMonths(today, Math.ceil(remaining / monthlySaving));
@@ -138,6 +152,6 @@ const api = {
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, arrivalDate,
-  validateNewCategory, renameCategoryInRecords,
+  validateNewCategory, renameCategoryInRecords, syncDirection,
 };
 if (typeof module !== "undefined") module.exports = api;

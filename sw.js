@@ -1,6 +1,6 @@
-const CACHE = "eok-v8"; // 배포마다 버전 올리기
+const CACHE = "eok-v9"; // 배포마다 버전 올리기
 const ASSETS = [
-  "./", "./index.html", "./styles.css", "./logic.js", "./app.js",
+  "./", "./index.html", "./styles.css", "./logic.js", "./sync.js", "./app.js",
   "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-180.png",
 ];
 

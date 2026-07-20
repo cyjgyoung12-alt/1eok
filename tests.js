@@ -102,5 +102,15 @@ eq("rename tx migrated", renamed.transactions.map((t) => t.category), ["연애",
 eq("rename fixed migrated", renamed.fixedItems[0].category, "연애");
 eq("rename keeps other fields", renamed.transactions[0].id, "t1");
 
+// 동기화 방향: 최신 쪽이 이긴다 (LWW)
+eq("sync both missing", L.syncDirection(undefined, undefined), "none");
+eq("sync server empty", L.syncDirection("2026-07-20T10:00:00.000Z", null), "push");
+eq("sync local empty", L.syncDirection(undefined, "2026-07-20T10:00:00.000Z"), "pull");
+eq("sync server newer", L.syncDirection("2026-07-20T10:00:00.000Z", "2026-07-20T11:00:00.000Z"), "pull");
+eq("sync local newer", L.syncDirection("2026-07-20T12:00:00.000Z", "2026-07-20T11:00:00.000Z"), "push");
+eq("sync equal", L.syncDirection("2026-07-20T10:00:00.000Z", "2026-07-20T10:00:00.000Z"), "none");
+eq("sync format mix equal", L.syncDirection("2026-07-20T10:00:00.000Z", "2026-07-20T10:00:00+00:00"), "none");
+eq("sync garbage local", L.syncDirection("not-a-date", "2026-07-20T10:00:00.000Z"), "pull");
+
 if (failed) { console.error(`\n${failed} test(s) failed`); process.exit(1); }
 console.log("\nall tests passed");

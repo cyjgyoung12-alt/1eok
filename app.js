@@ -53,13 +53,18 @@ function loadState() {
   }
 }
 
-function saveState() {
+// stamp:false는 부팅 시 재저장용 — updatedAt을 갱신하지 않아야
+// 다른 기기의 더 새로운 서버 데이터를 pull로 받을 수 있다
+function saveState(options) {
+  const stamp = options?.stamp !== false;
+  if (stamp) state = { ...state, updatedAt: new Date().toISOString() };
   const { toast, ...persisted } = state;
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(persisted));
   } catch {
     // 저장 실패(시크릿 모드·쿼터 초과)여도 앱은 계속 동작해야 한다
   }
+  if (stamp) syncSchedulePush(persisted);
 }
 
 function setState(next) {
@@ -872,6 +877,27 @@ function settingsCategoryRowHtml(type, name, index) {
   `;
 }
 
+function syncSectionHtml() {
+  if (!syncConfigured()) return `<p class="empty-state">서버 설정 대기 중입니다.</p>`;
+  if (!syncEnabled()) {
+    return `
+      <div class="button-row">
+        <button class="secondary-button" data-sync-start>동기화 시작</button>
+        <button class="secondary-button" data-sync-link>기존 키로 연결</button>
+      </div>
+    `;
+  }
+  const last = syncGetSettings()?.lastSyncedAt;
+  return `
+    <p class="empty-state">마지막 동기화 ${last ? new Date(last).toLocaleString("ko-KR") : "기록 없음"}</p>
+    <div class="button-row">
+      <button class="secondary-button" data-sync-now>지금 동기화</button>
+      <button class="secondary-button" data-sync-key>키 보기</button>
+    </div>
+    <div class="section"><button class="danger-button" data-sync-off>동기화 끄기</button></div>
+  `;
+}
+
 function renderSettings(m) {
   const accounts = state.accounts.slice().sort((a, b) => a.order - b.order);
   return `
@@ -907,6 +933,10 @@ function renderSettings(m) {
                 .join("")}</div>`
             : `<p class="empty-state">기록 입력의 ‘+ 추가’ 칩으로 만듭니다.</p>`
         }
+      </section>
+      <section class="card">
+        <div class="section-title-row"><h2 class="section-title">동기화</h2><span class="section-note">${syncEnabled() ? "켜짐" : "꺼짐"}</span></div>
+        ${syncSectionHtml()}
       </section>
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">데이터</h2><span class="section-note">이 기기에 저장</span></div>
@@ -969,6 +999,70 @@ function bindSettingsEvents() {
       const name = state.customCategories?.[type]?.[Number(button.dataset.catIndex)];
       if (name) openCategoryManageSheet(type, name);
     });
+  });
+
+  document.querySelector("[data-sync-start]")?.addEventListener("click", async () => {
+    const key = syncNewKey();
+    syncSetKey(key);
+    const { toast, ...persisted } = state;
+    try {
+      await syncPushNow(persisted);
+    } catch {
+      syncClear();
+      window.alert("서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.");
+      return;
+    }
+    window.prompt("동기화 키입니다. 복사해서 안전한 곳에 보관하세요.", key);
+    setState((prev) => ({ ...prev, toast: "동기화를 시작했습니다." }));
+    clearToastSoon();
+  });
+  document.querySelector("[data-sync-link]")?.addEventListener("click", async () => {
+    const input = window.prompt("다른 기기의 동기화 키를 붙여넣어 주세요.");
+    if (!input?.trim()) return;
+    const key = input.trim();
+    let payload;
+    try {
+      payload = await syncPullNow(key);
+    } catch {
+      window.alert("서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.");
+      return;
+    }
+    if (!payload) {
+      window.alert("해당 키로 저장된 데이터가 없습니다.");
+      return;
+    }
+    if (state.hasOnboarded && !window.confirm("이 기기의 데이터를 서버 데이터로 교체할까요?")) return;
+    syncSetKey(key);
+    syncMarkSynced();
+    applyServerState(payload, "서버 데이터를 가져왔습니다.");
+  });
+  document.querySelector("[data-sync-now]")?.addEventListener("click", async () => {
+    try {
+      const server = await syncPullNow();
+      const direction = syncDirection(state.updatedAt, server?.updatedAt);
+      if (direction === "pull") {
+        applyServerState(server);
+        return;
+      }
+      if (direction === "push") {
+        const { toast, ...persisted } = state;
+        await syncPushNow(persisted);
+      }
+      setState((prev) => ({ ...prev, toast: "동기화 완료 · 최신 상태입니다." }));
+      clearToastSoon();
+    } catch {
+      window.alert("서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.");
+    }
+  });
+  document.querySelector("[data-sync-key]")?.addEventListener("click", () => {
+    const key = syncGetSettings()?.key;
+    if (key) window.prompt("동기화 키 (복사용)", key);
+  });
+  document.querySelector("[data-sync-off]")?.addEventListener("click", () => {
+    if (!window.confirm("동기화를 끌까요? 서버 데이터는 남고, 이 기기는 로컬에만 저장합니다.")) return;
+    syncClear();
+    setState((prev) => ({ ...prev, toast: "동기화를 껐습니다." }));
+    clearToastSoon();
   });
 
   document.querySelector("[data-export-data]")?.addEventListener("click", exportData);
@@ -1172,6 +1266,48 @@ function openCategoryManageSheet(type, name) {
   });
 }
 
+/* ---------- 동기화 ---------- */
+
+// 서버 상태로 교체. updatedAt은 서버 값을 유지해 저장-업로드 핑퐁을 막고,
+// 예약된 업로드를 취소해 옛 스냅샷이 서버를 덮어쓰지 않게 한다
+function applyServerState(payload, toastText) {
+  syncCancelPending();
+  state = applyFixedItems({
+    ...defaultState(),
+    ...payload,
+    settings: { ...defaultState().settings, ...payload.settings },
+    customCategories: {
+      expense: payload.customCategories?.expense || [],
+      income: payload.customCategories?.income || [],
+    },
+    toast: toastText || "다른 기기의 변경사항을 받았습니다.",
+  });
+  const { toast, ...persisted } = state;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(persisted));
+  } catch {
+    // 무시
+  }
+  render();
+  clearToastSoon();
+}
+
+async function runStartupSync() {
+  if (!syncEnabled()) return;
+  try {
+    const server = await syncPullNow();
+    const direction = syncDirection(state.updatedAt, server?.updatedAt);
+    if (direction === "pull") {
+      applyServerState(server);
+    } else if (direction === "push") {
+      const { toast, ...persisted } = state;
+      await syncPushNow(persisted);
+    }
+  } catch {
+    // 오프라인이면 다음 저장·다음 실행에서 재시도
+  }
+}
+
 /* ---------- 백업/복원 ---------- */
 
 function exportData() {
@@ -1293,6 +1429,7 @@ function openOnboardingWizard() {
         <p class="wizard-feedback" data-wizard-feedback>현재 자산 ${readableMoney(accountsTotal())}</p>
         <p class="wizard-inline-warn" data-wizard-warn>이름 있는 계좌를 1개 이상 입력해 주세요.</p>
         <button type="button" class="wizard-cta" data-wizard-next>다음 →</button>
+        ${syncConfigured() ? `<button type="button" class="wizard-sync-link" data-wizard-sync-link>이미 쓰던 기기가 있다면 — 동기화 키로 가져오기</button>` : ""}
       </section>
     `;
   }
@@ -1529,6 +1666,23 @@ function openOnboardingWizard() {
         row.querySelector("input")?.focus();
       });
       modal.querySelector("[data-wizard-next]")?.addEventListener("click", goStep1Next);
+      modal.querySelector("[data-wizard-sync-link]")?.addEventListener("click", async () => {
+        const input = window.prompt("다른 기기의 동기화 키를 붙여넣어 주세요.");
+        if (!input?.trim()) return;
+        try {
+          const payload = await syncPullNow(input.trim());
+          if (!payload) {
+            window.alert("해당 키로 저장된 데이터가 없습니다.");
+            return;
+          }
+          syncSetKey(input.trim());
+          syncMarkSynced();
+          modal.remove();
+          applyServerState(payload, "서버 데이터를 가져왔습니다.");
+        } catch {
+          window.alert("서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.");
+        }
+      });
     } else if (step === 2) {
       const amountInput = modal.querySelector("[data-wizard-target-amount]");
       amountInput?.addEventListener("input", () => {
@@ -1580,9 +1734,10 @@ function openOnboardingWizard() {
 }
 
 let state = applyFixedItems(loadState());
-saveState();
+saveState({ stamp: false });
 render();
 if (!state.hasOnboarded && !document.querySelector(".wizard-backdrop")) openOnboardingWizard();
+runStartupSync();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
