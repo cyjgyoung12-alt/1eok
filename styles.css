@@ -161,6 +161,7 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 
 /* 예산(봉투) */
 .budget-card { display: block; width: 100%; text-align: left; cursor: pointer; }
+.inline-edit { margin-left: 6px; font-size: 11px; color: var(--faint); text-decoration: underline; text-underline-offset: 2px; }
 .budget-row.compact { padding: 5px 0; gap: 4px; }
 .budget-row { display: flex; flex-direction: column; gap: 5px; padding: 7px 0; }
 .budget-row-top { display: flex; justify-content: space-between; font-size: 13px; }

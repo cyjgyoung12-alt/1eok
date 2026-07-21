@@ -1477,11 +1477,17 @@ function openBudgetSheet(targetMonth) {
   const fixedSum = m.fixedExpenseSum;
   const requiredFloor = Math.round(m.requiredSaving);
   const savingInit = existing?.saving ?? requiredFloor;
-  // 삭제된 카테고리의 기존 봉투도 목록에 포함 — 안 보이는 채로 저장 시 소멸하는 것을 방지
-  const baseCategories = [...expenseCategories, ...(state.customCategories?.expense || [])].filter((c) => c !== "고정비");
-  const orphaned = (existing?.envelopes || []).map((e) => e.category).filter((c) => !baseCategories.includes(c));
-  const categories = [...baseCategories, ...orphaned];
-  const envelopeInit = (category) => existing?.envelopes?.find((e) => e.category === category)?.amount || 0;
+
+  // 봉투 목록 = 지출 카테고리(고정비 제외) + 삭제된 카테고리의 기존 봉투(저장 시 소멸 방지)
+  const categoryList = () => {
+    const base = [...expenseCategories, ...(state.customCategories?.expense || [])].filter((c) => c !== "고정비");
+    const orphaned = (state.budgets?.[targetMonth]?.envelopes || []).map((e) => e.category).filter((c) => !base.includes(c));
+    return [...base, ...orphaned];
+  };
+  const initialValues = {};
+  (existing?.envelopes || []).forEach((e) => {
+    initialValues[e.category] = Number(e.amount).toLocaleString("ko-KR");
+  });
 
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
@@ -1496,13 +1502,8 @@ function openBudgetSheet(targetMonth) {
         <div class="money-row"><span>고정비</span><strong class="num">-${money(fixedSum)}</strong></div>
         <div class="field"><label for="budgetSaving">저축액 · 최소 ${money(requiredFloor)}</label>
           <input id="budgetSaving" name="saving" inputmode="numeric" value="${Number(savingInit).toLocaleString("ko-KR")}" /></div>
-        ${categories
-          .map(
-            (category, i) => `
-          <div class="field"><label for="budgetEnv${i}">${escapeHtml(category)}</label>
-            <input id="budgetEnv${i}" name="env-${i}" inputmode="numeric" placeholder="봉투 없음" value="${envelopeInit(category) ? Number(envelopeInit(category)).toLocaleString("ko-KR") : ""}" /></div>`,
-          )
-          .join("")}
+        <div class="form-grid" data-budget-cats></div>
+        <button type="button" class="secondary-button" data-add-budget-category>+ 카테고리 추가</button>
         <div class="settle-total"><span>미배분</span><strong class="num" data-budget-left>0원</strong></div>
         <p class="budget-warn" data-budget-warn>배분이 수입을 넘습니다. 저장은 되지만 미션 예산과 어긋납니다.</p>
         <button class="primary-button" type="submit">예산 저장</button>
@@ -1513,16 +1514,93 @@ function openBudgetSheet(targetMonth) {
   bindSheetClose(modal);
 
   const form = modal.querySelector("[data-budget-form]");
+  const catsBox = modal.querySelector("[data-budget-cats]");
   const leftEl = modal.querySelector("[data-budget-left]");
   const warnEl = modal.querySelector("[data-budget-warn]");
+
+  const readValues = () => {
+    const values = {};
+    catsBox.querySelectorAll("input[data-cat-input]").forEach((input) => {
+      values[input.dataset.catInput] = input.value;
+    });
+    return values;
+  };
   const compute = () => {
     // 저장 시와 같은 하한 클램프를 적용해 표시 미배분과 실제 저장 계획을 일치시킨다
     const saving = Math.max(numberFromInput(form.elements.saving.value) || 0, requiredFloor);
-    const envelopeSum = categories.reduce((sum, _, i) => sum + (numberFromInput(form.elements[`env-${i}`].value) || 0), 0);
+    const envelopeSum = Object.values(readValues()).reduce((sum, value) => sum + (numberFromInput(value) || 0), 0);
     const left = income - fixedSum - saving - envelopeSum;
     leftEl.textContent = `${left < 0 ? "-" : ""}${money(Math.abs(left))}`;
     warnEl.classList.toggle("visible", left < 0);
   };
+
+  // 카테고리 칸을 상태 기준으로 다시 그린다. 입력값은 values로 보존, 커스텀은 이름변경 가능
+  const renderCats = (values, focusName) => {
+    const customs = state.customCategories?.expense || [];
+    catsBox.innerHTML = categoryList()
+      .map(
+        (category, i) => `
+      <div class="field">
+        <label for="budgetEnv${i}">${escapeHtml(category)}${customs.includes(category) ? ` <button type="button" class="inline-edit" data-cat-rename="${escapeHtml(category)}">이름변경</button>` : ""}</label>
+        <input id="budgetEnv${i}" data-cat-input="${escapeHtml(category)}" inputmode="numeric" placeholder="봉투 없음" value="${escapeHtml(String(values[category] || ""))}" />
+      </div>`,
+      )
+      .join("");
+    catsBox.querySelectorAll("[data-cat-rename]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const from = button.dataset.catRename;
+        const input = window.prompt("새 이름 (8자 이내)", from);
+        if (input === null) return;
+        const others = [...expenseCategories, ...(state.customCategories?.expense || [])].filter((c) => c !== from);
+        const to = validateNewCategory(input, others);
+        if (!to) {
+          window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
+          return;
+        }
+        if (to === from) return;
+        const kept = readValues();
+        kept[to] = kept[from];
+        delete kept[from];
+        const migrated = renameCategoryInRecords(state.transactions, state.fixedItems, from, to);
+        state = {
+          ...state,
+          transactions: migrated.transactions,
+          fixedItems: migrated.fixedItems,
+          budgets: renameCategoryInBudgets(state.budgets, from, to),
+          customCategories: {
+            ...state.customCategories,
+            expense: (state.customCategories?.expense || []).map((c) => (c === from ? to : c)),
+          },
+        };
+        saveState();
+        render();
+        renderCats(kept);
+        compute();
+      });
+    });
+    if (focusName) catsBox.querySelector(`input[data-cat-input="${CSS.escape(focusName)}"]`)?.focus();
+  };
+  renderCats(initialValues);
+
+  modal.querySelector("[data-add-budget-category]").addEventListener("click", () => {
+    const input = window.prompt("새 카테고리 이름 (8자 이내)");
+    if (input === null) return;
+    const name = validateNewCategory(input, [...expenseCategories, ...(state.customCategories?.expense || [])]);
+    if (!name) {
+      window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
+      return;
+    }
+    const kept = readValues();
+    state = {
+      ...state,
+      customCategories: { ...state.customCategories, expense: [...(state.customCategories?.expense || []), name] },
+    };
+    saveState();
+    render();
+    renderCats(kept, name);
+    compute();
+  });
+
   form.addEventListener("input", compute);
   compute();
 
@@ -1530,8 +1608,9 @@ function openBudgetSheet(targetMonth) {
     event.preventDefault();
     const savingInput = numberFromInput(form.elements.saving.value) || 0;
     const saving = Math.max(savingInput, requiredFloor);
-    const envelopes = categories
-      .map((category, i) => ({ category, amount: numberFromInput(form.elements[`env-${i}`].value) || 0 }))
+    const values = readValues();
+    const envelopes = categoryList()
+      .map((category) => ({ category, amount: numberFromInput(values[category]) || 0 }))
       .filter((envelope) => envelope.amount > 0);
     setState((prev) => ({
       ...prev,
