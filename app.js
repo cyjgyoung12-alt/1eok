@@ -171,6 +171,8 @@ function getMetrics(currentState) {
   const grid = buildGrid(currentState.settlements, currentMonth);
 
   const saving = savingProgress(monthSaving, savingTarget);
+  // 이번 달 변동지출 합(미션 예산 대비 사용액) — 고정비 자동 기록 제외
+  const monthVariableSpent = Object.values(spendByDay).reduce((sum, v) => sum + Number(v || 0), 0);
 
   const monthIncome = monthTx.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount), 0);
   const monthExpense = monthTx.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount), 0);
@@ -193,7 +195,7 @@ function getMetrics(currentState) {
     fixedExpenseSum, monthBudget, dayResults, todayResult, todayDay, streak,
     speed, arrival, basisLabel, settledThisMonth, settleDday, settleStreak,
     grid, monthIncome, monthExpense, categoryExpenses, variableCategoryExpenses,
-    latest, budget: budgetPlan, savingTarget, monthSaving, saving,
+    latest, budget: budgetPlan, savingTarget, monthSaving, saving, monthVariableSpent,
   };
 }
 
@@ -296,7 +298,8 @@ function renderMissionCard(m) {
       </div>
       <p class="mission-remaining num ${over ? "over" : ""}">${money(Math.abs(Math.round(remaining))).replace("원", "")}<span class="unit">${over ? "원 초과" : "원"}</span></p>
       <div class="progress-track"><div class="progress-fill" style="width:${100 - usedRate}%"></div></div>
-      <p class="mission-sub num">예산 ${money(Math.round(m.todayResult.budget))} · 사용 ${money(m.todayResult.spent)}</p>
+      <p class="mission-sub num">오늘 예산 ${money(Math.round(m.todayResult.budget))} · 사용 ${money(m.todayResult.spent)}</p>
+      <p class="mission-sub num">이번 달 예산 ${money(Math.round(m.monthBudget))} · 사용 ${money(m.monthVariableSpent)}</p>
     </section>
   `;
 }
@@ -439,7 +442,7 @@ function openTransactionSheet(type) {
           <label>카테고리</label>
           <div class="chips" data-category-chips></div>
         </div>
-        <p class="saving-hint" data-saving-hint hidden>◐ 저축은 쓴 게 아니라 저축·투자 계좌로 남긴 돈입니다. 자산은 그대로이고, 이번 달 쓸 돈이 그만큼 줄어듭니다.</p>
+        <p class="saving-hint" data-saving-hint hidden>저축은 쓴 게 아니라 저축·투자 계좌로 남긴 돈입니다. 자산은 그대로이고, 이번 달 쓸 돈이 그만큼 줄어듭니다.</p>
         <details class="advanced-fields">
           <summary>메모·날짜</summary>
           <div class="field"><label for="title">메모</label><input id="title" name="title" /></div>
@@ -458,7 +461,7 @@ function openTransactionSheet(type) {
   const renderChips = () => {
     const categories = categoriesFor(type);
     const savingChip = isExpense
-      ? `<button class="chip chip-saving ${savingSelected ? "active" : ""}" type="button" data-pick-saving>◐ 저축</button>`
+      ? `<button class="chip ${savingSelected ? "active" : ""}" type="button" data-pick-saving>저축</button>`
       : "";
     chipsBox.innerHTML = categories
       .map((name, i) => `<button class="chip ${!savingSelected && name === selectedCategory ? "active" : ""}" type="button" data-pick-category="${i}">${escapeHtml(name)}</button>`)
