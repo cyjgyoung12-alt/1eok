@@ -57,6 +57,7 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .mission-remaining .unit { font-size: 15px; font-weight: 500; color: var(--muted); }
 .mission-remaining.over { color: var(--muted); }
 .mission-sub { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.progress-track + .mission-sub { margin-top: 8px; } /* 오늘 예산 줄(진행바 바로 다음)만 조금 더 띄움 */
 .mission-warn { margin: 6px 0 0; font-size: 12px; color: var(--mint); }
 
 .progress-track { height: 4px; border-radius: 2px; background: var(--line); margin-top: 10px; overflow: hidden; }
