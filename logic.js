@@ -56,11 +56,15 @@ function monthlyVariableBudget(monthlyIncome, fixedExpenseSum, requiredSaving) {
 
 // spendByDay: { [일(1-based)]: 그날 변동지출 합 }. 키 존재 = 그날 기록 있음(판정 대상).
 // startDay 이전 날들은 하루 몫을 소진한 것으로 본다(늦게 시작해도 보너스 예산 금지).
-function dailyBudgets(monthBudget, spendByDay, daysTotal, startDay = 1) {
+// savingByDay: { [일]: 그날 기록한 저축 합 }. 저축은 기록한 날부터 예산을 줄인다 —
+//   과거 판정일은 그대로 두어(소급 재판정 금지) 스트릭이 저축으로 무너지지 않게 한다.
+function dailyBudgets(monthBudget, spendByDay, daysTotal, startDay = 1, savingByDay = {}) {
   const results = [];
   const share = Math.max(0, monthBudget) / daysTotal;
   let spentBefore = 0;
+  let savedThrough = 0;
   for (let day = 1; day <= daysTotal; day += 1) {
+    savedThrough += Number(savingByDay[day] || 0); // 오늘까지 기록한 저축은 오늘 예산부터 반영
     if (day < startDay) {
       const spent = Number(spendByDay[day] ?? 0);
       results.push({ day, budget: share, spent, judged: false, clear: false });
@@ -68,7 +72,7 @@ function dailyBudgets(monthBudget, spendByDay, daysTotal, startDay = 1) {
       continue;
     }
     const daysLeft = daysTotal - day + 1;
-    const budget = Math.max(0, (monthBudget - spentBefore) / daysLeft);
+    const budget = Math.max(0, (monthBudget - spentBefore - savedThrough) / daysLeft);
     const judged = Object.prototype.hasOwnProperty.call(spendByDay, day);
     const spent = judged ? Number(spendByDay[day]) : 0;
     results.push({ day, budget, spent, judged, clear: judged && spent <= budget });

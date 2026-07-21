@@ -44,6 +44,16 @@ eq("dailyBudgets length", days.length, 31);
 const drained = L.dailyBudgets(10000, { 1: 50000 }, 31);
 eq("budget floor 0", drained[1].budget, 0);
 
+// 저축(savingByDay)은 기록한 날부터 예산을 줄이되, 과거 판정일은 건드리지 않는다
+const spend19 = {};
+for (let d = 1; d <= 19; d += 1) spend19[d] = 30000;
+const savA = L.dailyBudgets(900000, spend19, 30, 1, { 20: 300000 });
+eq("saving keeps past streak", L.missionStreak(savA, 20), 19); // 20일에 저축해도 1~19 스트릭 유지
+eq("saving no-op past clear", [savA[0].clear, savA[18].clear], [true, true]); // 1·19일 여전히 클리어
+approx("saving cuts today budget", savA[19].budget, 30000 / 11); // 20일 예산은 저축만큼 줄어듦
+// savingByDay 생략 시 기존 동작 유지 (하위 호환)
+approx("saving default compat", L.dailyBudgets(310000, {}, 31)[0].budget, 10000);
+
 // 스트릭: 미판정일은 건너뛰고, 실패에서 끊긴다 (오늘=7일)
 // day7 clear, day6 unjudged, day5 clear, day4 fail → streak 2
 const streakDays = L.dailyBudgets(310000, { 4: 20000, 5: 3000, 7: 3000 }, 31);

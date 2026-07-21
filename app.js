@@ -123,10 +123,19 @@ function getMetrics(currentState) {
   const fixedExpenseSum = currentState.fixedItems
     .filter((item) => item.active && item.type === "expense")
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  // 이번 달 예산(봉투)의 저축액이 필요 월저축보다 크면 미션 예산이 그만큼 줄어든다
+  // 저축 목표(봉투 goal): 필요 월저축, 또는 예산 시트에서 더 크게 잡은 값
   const budgetPlan = currentState.budgets?.[currentMonth] || null;
-  const effSaving = effectiveMonthlySaving(requiredSaving, budgetPlan?.saving);
-  const monthBudget = monthlyVariableBudget(Number(s.monthlyIncome || 0), fixedExpenseSum, effSaving);
+  const savingTarget = effectiveMonthlySaving(requiredSaving, budgetPlan?.saving);
+  // 미션 예산은 월 수입 − 고정비. 저축은 미리 떼지 않고(선저축 강제 없음),
+  // 기록한 날부터 그날 이후 예산만 줄인다(savingByDay) — 과거 판정일은 불변
+  const monthBudget = monthlyVariableBudget(Number(s.monthlyIncome || 0), fixedExpenseSum, 0);
+  const monthSavings = (currentState.savings || []).filter((sv) => monthKey(parseDate(sv.date)) === currentMonth);
+  const monthSaving = monthSavings.reduce((sum, sv) => sum + Number(sv.amount || 0), 0);
+  const savingByDay = {};
+  monthSavings.forEach((sv) => {
+    const day = parseDate(sv.date).getDate();
+    savingByDay[day] = (savingByDay[day] || 0) + Number(sv.amount || 0);
+  });
 
   // 이번 달 변동지출을 일별로 집계 (키 존재 = 그날 기록 있음)
   const spendByDay = {};
@@ -143,7 +152,7 @@ function getMetrics(currentState) {
   // 시작 달에는 시작일 이전 몫을 소진 처리 (1일 시작 기준으로 빡세게)
   const startDate = s.startDate ? parseDate(s.startDate) : today;
   const startDay = monthKey(startDate) === currentMonth ? startDate.getDate() : 1;
-  const dayResults = dailyBudgets(Math.max(0, monthBudget), spendByDay, daysTotal, startDay);
+  const dayResults = dailyBudgets(Math.max(0, monthBudget), spendByDay, daysTotal, startDay, savingByDay);
   const todayResult = dayResults[todayDay - 1];
   const streak = missionStreak(dayResults, todayDay);
 
@@ -161,11 +170,7 @@ function getMetrics(currentState) {
   const settleStreak = countSettleStreak(currentState.settlements, currentMonth);
   const grid = buildGrid(currentState.settlements, currentMonth);
 
-  // 이번 달 실제 저축(별도 savings 배열) 대비 미션이 떼어둔 저축액(effSaving)
-  const monthSaving = (currentState.savings || [])
-    .filter((sv) => monthKey(parseDate(sv.date)) === currentMonth)
-    .reduce((sum, sv) => sum + Number(sv.amount || 0), 0);
-  const saving = savingProgress(monthSaving, effSaving);
+  const saving = savingProgress(monthSaving, savingTarget);
 
   const monthIncome = monthTx.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount), 0);
   const monthExpense = monthTx.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount), 0);
@@ -188,7 +193,7 @@ function getMetrics(currentState) {
     fixedExpenseSum, monthBudget, dayResults, todayResult, todayDay, streak,
     speed, arrival, basisLabel, settledThisMonth, settleDday, settleStreak,
     grid, monthIncome, monthExpense, categoryExpenses, variableCategoryExpenses,
-    latest, budget: budgetPlan, effectiveSaving: effSaving, saving,
+    latest, budget: budgetPlan, savingTarget, monthSaving, saving,
   };
 }
 
@@ -276,7 +281,7 @@ function renderMissionCard(m) {
           <p class="mission-label">오늘 쓸 수 있는 돈</p>
         </div>
         <p class="mission-remaining num over">0<span class="unit">원</span></p>
-        <p class="mission-warn">이 목표일은 현재 수입으로 어렵습니다. 설정에서 목표일 또는 월 수입을 조정해 주세요.</p>
+        <p class="mission-warn">월 수입이 고정비보다 적습니다. 설정에서 월 수입·고정비를 확인해 주세요.</p>
       </section>
     `;
   }
@@ -341,7 +346,6 @@ function renderReality(m) {
     <section class="section quick-actions">
       <button class="action-button expense" data-open-transaction="expense">− 지출</button>
       <button class="action-button income" data-open-transaction="income">+ 수입</button>
-      <button class="action-button saving" data-open-transaction="saving">◐ 저축</button>
     </section>
     <section class="section card">
       <p class="hero-label">1억까지 남은 금액</p>
@@ -414,28 +418,28 @@ function renameCategoryEverywhere(type, from, to) {
 }
 
 function openTransactionSheet(type) {
-  const isSaving = type === "saving";
-  const titles = { income: "수입 기록", expense: "지출 기록", saving: "저축 기록" };
-  let selectedCategory = isSaving ? "저축" : categoriesFor(type)[0];
+  // type: "expense" | "income". 저축은 지출 시트의 특수 카테고리(◐ 저축)로 기록한다
+  const isExpense = type === "expense";
+  let selectedCategory = categoriesFor(type)[0];
+  let savingSelected = false;
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.innerHTML = `
     <section class="sheet" role="dialog" aria-modal="true">
       <div class="sheet-header">
-        <h2 class="sheet-title">${titles[type]}</h2>
+        <h2 class="sheet-title">${type === "income" ? "수입 기록" : "지출 기록"}</h2>
         <button class="ghost-button" data-close-sheet>닫기</button>
       </div>
       <form class="form-grid" data-transaction-form>
         <div class="field">
           <label for="amount">금액</label>
-          <input id="amount" name="amount" inputmode="numeric" placeholder="${isSaving ? "예: 500000" : "예: 12000"}" autofocus />
+          <input id="amount" name="amount" inputmode="numeric" placeholder="예: 12000" autofocus />
         </div>
-        ${isSaving
-          ? `<p class="saving-hint">저축통장·투자계좌로 옮긴 금액입니다. 자산은 줄지 않고, 이번 달 저축이 채워집니다.</p>`
-          : `<div class="field">
+        <div class="field">
           <label>카테고리</label>
           <div class="chips" data-category-chips></div>
-        </div>`}
+        </div>
+        <p class="saving-hint" data-saving-hint hidden>◐ 저축은 쓴 게 아니라 저축·투자 계좌로 남긴 돈입니다. 자산은 그대로이고, 이번 달 쓸 돈이 그만큼 줄어듭니다.</p>
         <details class="advanced-fields">
           <summary>메모·날짜</summary>
           <div class="field"><label for="title">메모</label><input id="title" name="title" /></div>
@@ -450,17 +454,26 @@ function openTransactionSheet(type) {
   modal.querySelector("#amount")?.focus();
 
   const chipsBox = modal.querySelector("[data-category-chips]");
+  const hintEl = modal.querySelector("[data-saving-hint]");
   const renderChips = () => {
-    if (!chipsBox) return;
     const categories = categoriesFor(type);
+    const savingChip = isExpense
+      ? `<button class="chip chip-saving ${savingSelected ? "active" : ""}" type="button" data-pick-saving>◐ 저축</button>`
+      : "";
     chipsBox.innerHTML = categories
-      .map((name, i) => `<button class="chip ${name === selectedCategory ? "active" : ""}" type="button" data-pick-category="${i}">${escapeHtml(name)}</button>`)
-      .join("") + `<button class="chip chip-add" type="button" data-add-category>+ 추가</button>`;
+      .map((name, i) => `<button class="chip ${!savingSelected && name === selectedCategory ? "active" : ""}" type="button" data-pick-category="${i}">${escapeHtml(name)}</button>`)
+      .join("") + savingChip + `<button class="chip chip-add" type="button" data-add-category>+ 추가</button>`;
+    if (hintEl) hintEl.hidden = !savingSelected;
     chipsBox.querySelectorAll("[data-pick-category]").forEach((button) => {
       button.addEventListener("click", () => {
+        savingSelected = false;
         selectedCategory = categoriesFor(type)[Number(button.dataset.pickCategory)];
         renderChips();
       });
+    });
+    chipsBox.querySelector("[data-pick-saving]")?.addEventListener("click", () => {
+      savingSelected = true;
+      renderChips();
     });
     chipsBox.querySelector("[data-add-category]").addEventListener("click", () => {
       const input = window.prompt("새 카테고리 이름 (8자 이내)");
@@ -471,41 +484,45 @@ function openTransactionSheet(type) {
         return;
       }
       addCategoryToState(type, name);
+      savingSelected = false;
       selectedCategory = name;
       renderChips();
     });
   };
   renderChips();
+
   modal.querySelector("[data-transaction-form]").addEventListener("submit", (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const amount = numberFromInput(form.get("amount"));
     if (!amount) return;
-    const record = {
+    const base = {
       id: cryptoId(),
-      type,
       amount,
-      category: isSaving ? "저축" : selectedCategory,
-      title: String(form.get("title") || (isSaving ? "저축" : selectedCategory)),
       date: String(form.get("date") || localDateString(new Date())),
       source: "manual",
     };
-    // 저축은 별도 savings 배열(이체 — 순자산·미션·거래 집계와 분리)
-    const next = isSaving
-      ? { ...state, savings: [...(state.savings || []), record] }
-      : { ...state, transactions: [...state.transactions, record] };
+    let next;
+    if (savingSelected) {
+      // 저축은 별도 savings 배열(이체 — 순자산·거래 집계와 분리, 이번 달 쓸 돈만 줄인다)
+      const record = { ...base, type: "saving", category: "저축", title: String(form.get("title") || "저축") };
+      next = { ...state, savings: [...(state.savings || []), record] };
+    } else {
+      const record = { ...base, type, category: selectedCategory, title: String(form.get("title") || selectedCategory) };
+      next = { ...state, transactions: [...state.transactions, record] };
+    }
     const after = getMetrics(next);
+    const remaining = after.monthBudget > 0 ? after.todayResult.budget - after.todayResult.spent : null;
     let toast;
-    if (isSaving) {
-      toast = after.saving.target > 0
-        ? `저축 ${money(amount)} 기록 · 이번 달 ${money(after.saving.saved)} / ${money(Math.round(after.saving.target))}`
-        : `저축 ${money(amount)} 기록했습니다.`;
+    if (savingSelected) {
+      toast = remaining !== null && remaining >= 0
+        ? `저축 ${money(amount)} 기록 · 오늘 잔여 ${money(Math.round(remaining))}`
+        : `저축 ${money(amount)} 기록 · 이번 달 ${money(after.saving.saved)}${after.saving.target > 0 ? ` / ${money(Math.round(after.saving.target))}` : ""}`;
     } else if (type === "income") {
       toast = `수입 +${money(amount)} 기록했습니다.`;
     } else if (after.monthBudget <= 0) {
       toast = `지출 ${money(amount)} 저장했습니다.`;
     } else {
-      const remaining = after.todayResult.budget - after.todayResult.spent;
       toast = remaining >= 0
         ? `저장 · 오늘 잔여 ${money(Math.round(remaining))}`
         : after.todayDay < after.dayResults.length
@@ -844,7 +861,6 @@ function renderRecord(m) {
     <section class="quick-actions">
       <button class="action-button expense" data-open-transaction="expense">− 지출</button>
       <button class="action-button income" data-open-transaction="income">+ 수입</button>
-      <button class="action-button saving" data-open-transaction="saving">◐ 저축</button>
     </section>
     <section class="section card">
       <div class="section-title-row"><h2 class="section-title">입력 후 현실</h2><span class="section-note">즉시 반영</span></div>
@@ -987,7 +1003,7 @@ function budgetCardHtml(m) {
     .join("");
   return `
     <section class="card">
-      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note num">저축 ${money(Math.round(m.effectiveSaving))} · 미션 반영</span></div>
+      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note num">저축 목표 ${money(Math.round(m.savingTarget))}</span></div>
       ${savingRow}
       ${rows || `<p class="empty-state">봉투가 없습니다. 예산 편집에서 추가하세요.</p>`}
       <button class="secondary-button" data-open-budget="${m.currentMonth}">예산 편집</button>
@@ -1998,10 +2014,10 @@ function openOnboardingWizard() {
     const income = numberFromInput(monthlyIncome) || 0;
     const fixed = numberFromInput(fixedExpense) || 0;
     const requiredSaving = requiredMonthlySaving(targetAmount, total, targetDate, today);
-    const monthBudget = monthlyVariableBudget(income, fixed, requiredSaving);
+    // 실사용 미션과 동일: 월 수입 − 고정비를 그 달 전체 일수로 나눈 하루 몫(저축은 기록해야 줄어듦)
+    const monthBudget = monthlyVariableBudget(income, fixed, 0);
     const daysTotal = daysInMonth(today.getFullYear(), today.getMonth() + 1);
-    const daysLeft = daysTotal - today.getDate() + 1;
-    const todayBudget = Math.round(Math.max(0, monthBudget) / daysLeft);
+    const todayBudget = Math.round(Math.max(0, monthBudget) / daysTotal);
     const arrival = arrivalDate(remaining, requiredSaving, today);
     const arrivalHtml = arrival
       ? `<p class="wizard-finale-sentence">이 페이스면 ${arrival.getFullYear()}년 ${arrival.getMonth() + 1}월에<br>1억 달성합니다.</p>`
@@ -2009,7 +2025,7 @@ function openOnboardingWizard() {
     const amountHtml =
       monthBudget > 0
         ? `<p class="wizard-finale-amount">${todayBudget.toLocaleString("ko-KR")}원</p>`
-        : `<p class="wizard-finale-warn">이 목표일은 현재 수입으로 어렵습니다. 시작 후 설정에서 목표일·월 수입을 조정해 주세요.</p>`;
+        : `<p class="wizard-finale-warn">월 수입이 고정비보다 적습니다. 시작 후 설정에서 월 수입·고정비를 확인해 주세요.</p>`;
     return `
       <section class="wizard-card wizard-finale" role="dialog" aria-modal="true">
         <p class="wizard-finale-label">오늘 쓸 수 있는 돈</p>
