@@ -1058,19 +1058,6 @@ function settingsFixedRowHtml(item) {
   `;
 }
 
-function settingsCategoryRowHtml(type, name) {
-  const custom = (state.customCategories?.[type] || []).includes(name);
-  return `
-    <button type="button" class="settings-row" data-cat-type="${type}" data-cat-name="${escapeHtml(name)}">
-      <span class="settings-row-main">
-        <span>${escapeHtml(name)}</span>
-        <span class="sub">${type === "income" ? "수입" : "지출"}${custom ? " · 직접 추가" : ""}</span>
-      </span>
-      <span class="settings-row-side"><span class="chev">›</span></span>
-    </button>
-  `;
-}
-
 function syncSectionHtml() {
   if (!syncConfigured()) return `<p class="empty-state">서버 설정 대기 중입니다.</p>`;
   if (!syncEnabled()) {
@@ -1119,14 +1106,20 @@ function renderSettings(m) {
         <button class="secondary-button" data-open-fixed>고정 항목 추가</button>
       </section>
       <section class="card">
-        <div class="section-title-row"><h2 class="section-title">카테고리</h2><span class="section-note">탭해서 이름변경</span></div>
-        <div class="settings-list">${["expense", "income"]
-          .flatMap((type) =>
-            categoriesFor(type)
+        <div class="section-title-row"><h2 class="section-title">카테고리</h2><span class="section-note">칩을 탭하면 관리</span></div>
+        ${["expense", "income"]
+          .map(
+            (type) => `
+          <p class="cat-group-label">${type === "expense" ? "지출" : "수입"}</p>
+          <div class="chips">
+            ${categoriesFor(type)
               .filter((name) => !(type === "expense" && name === "고정비"))
-              .map((name) => settingsCategoryRowHtml(type, name)),
+              .map((name) => `<button type="button" class="chip" data-cat-type="${type}" data-cat-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
+              .join("")}
+            <button type="button" class="chip chip-add" data-cat-add="${type}">+ 추가</button>
+          </div>`,
           )
-          .join("")}</div>
+          .join("")}
       </section>
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">동기화</h2><span class="section-note">${syncEnabled() ? "켜짐" : "꺼짐"}</span></div>
@@ -1195,6 +1188,22 @@ function bindSettingsEvents() {
       const type = button.dataset.catType;
       const name = button.dataset.catName;
       if (name && categoriesFor(type).includes(name)) openCategoryManageSheet(type, name);
+    });
+  });
+  document.querySelectorAll("[data-cat-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const type = button.dataset.catAdd;
+      const input = window.prompt("새 카테고리 이름 (8자 이내)");
+      if (input === null) return;
+      const name = validateNewCategory(input, categoriesFor(type));
+      if (!name) {
+        window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
+        return;
+      }
+      addCategoryToState(type, name);
+      state = { ...state, toast: "카테고리를 추가했습니다." };
+      render();
+      clearToastSoon();
     });
   });
 
@@ -1400,7 +1409,6 @@ function openFixedManageSheet(item) {
 }
 
 function openCategoryManageSheet(type, name) {
-  const isCustom = (state.customCategories?.[type] || []).includes(name);
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.innerHTML = `
@@ -1411,7 +1419,7 @@ function openCategoryManageSheet(type, name) {
       </div>
       <div class="form-grid">
         <button class="secondary-button" data-manage-rename>이름 변경</button>
-        ${isCustom ? `<button class="danger-button" data-manage-delete>삭제</button>` : `<p class="empty-state">기본 카테고리는 삭제할 수 없고 이름만 바꿀 수 있습니다.</p>`}
+        <button class="danger-button" data-manage-delete>삭제</button>
       </div>
     </section>
   `;
@@ -1436,7 +1444,12 @@ function openCategoryManageSheet(type, name) {
     clearToastSoon();
   });
   modal.querySelector("[data-manage-delete]")?.addEventListener("click", () => {
-    if (!window.confirm("카테고리를 삭제할까요? 과거 기록은 그대로 남습니다.")) return;
+    // 타입별 마지막 카테고리는 남겨야 기록 입력이 가능하다
+    if (categoriesFor(type).filter((c) => !(type === "expense" && c === "고정비")).length <= 1) {
+      window.alert("마지막 카테고리는 삭제할 수 없습니다.");
+      return;
+    }
+    if (!window.confirm("카테고리를 삭제할까요? 과거 기록은 그대로 남고, 같은 이름으로 다시 추가하면 복구됩니다.")) return;
     setState((prev) => ({
       ...prev,
       categories: { ...prev.categories, [type]: categoriesFor(type).filter((c) => c !== name) },

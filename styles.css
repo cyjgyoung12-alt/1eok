@@ -148,6 +148,8 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .chip { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .chip.active { border-color: var(--mint); color: var(--mint); }
 .chip-add { border-style: dashed; }
+.cat-group-label { margin: 12px 0 7px; font-size: 11px; color: var(--muted); letter-spacing: 0.3px; }
+.section-title-row + .cat-group-label { margin-top: 0; }
 .wizard-sync-link { margin-top: 10px; width: 100%; background: none; border: 0; color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 
 /* 자산 구성 도넛 */
