@@ -101,6 +101,15 @@ const renamed = L.renameCategoryInRecords(
 eq("rename tx migrated", renamed.transactions.map((t) => t.category), ["연애", "식비"]);
 eq("rename fixed migrated", renamed.fixedItems[0].category, "연애");
 eq("rename keeps other fields", renamed.transactions[0].id, "t1");
+// type을 주면 그 타입의 거래·고정 항목만 이관 (지출 "기타"와 수입 "기타"가 공존해도 안전)
+const typedRename = L.renameCategoryInRecords(
+  [{ id: "t1", type: "expense", category: "기타" }, { id: "t2", type: "income", category: "기타" }],
+  [{ id: "f1", type: "income", category: "기타" }],
+  "기타", "환급", "income",
+);
+eq("rename scoped by type", [
+  typedRename.transactions[0].category, typedRename.transactions[1].category, typedRename.fixedItems[0].category,
+], ["기타", "환급", "환급"]);
 
 // 늦은 시작: startDay 이전 날들은 하루 몫을 소진한 것으로 처리 (1일 시작 기준)
 const lateStart = L.dailyBudgets(310000, {}, 31, 20);

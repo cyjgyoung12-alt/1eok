@@ -22,7 +22,11 @@ input, select {
   width: 100%; padding: 11px 12px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--card-strong); color: var(--text);
   font-size: 16px; /* 16px 미만이면 iOS가 포커스 시 화면을 강제 확대한다 */
+  height: 46px; /* 날짜·텍스트 입력의 iOS 고유 높이 차이를 통일 */
 }
+/* select는 네이티브 화살표를 유지해야 드롭다운임이 보인다 — input에만 appearance 제거 */
+input { -webkit-appearance: none; appearance: none; }
+input[type="date"] { display: inline-flex; align-items: center; }
 input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--mint); }
 
 .app-shell { width: min(100%, 430px); min-height: 100dvh; margin: 0 auto; position: relative; }
@@ -222,7 +226,7 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .wizard-row-input {
   flex: 1; min-width: 0; width: auto; text-align: right; font-size: 16px; font-weight: 700;
   font-variant-numeric: tabular-nums; background: none; border: none; padding: 0;
-  border-radius: 0; color: var(--text);
+  border-radius: 0; color: var(--text); height: auto;
 }
 .wizard-row-input::placeholder { color: var(--faint); font-weight: 400; font-size: 13px; }
 .wizard-row-input.name { text-align: left; font-size: 16px; font-weight: 400; color: var(--muted); }

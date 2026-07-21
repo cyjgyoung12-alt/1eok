@@ -131,8 +131,10 @@ function validateNewCategory(rawName, existingNames) {
 }
 
 // 카테고리 이름 변경 시 과거 거래·고정 항목의 category를 함께 이관
-function renameCategoryInRecords(transactions, fixedItems, from, to) {
-  const swap = (item) => (item.category === from ? { ...item, category: to } : item);
+// type("expense"|"income")을 주면 그 타입만 이관 — 지출/수입 양쪽에 같은 이름이 있어도 안전
+function renameCategoryInRecords(transactions, fixedItems, from, to, type) {
+  const swap = (item) =>
+    item.category === from && (!type || item.type === type) ? { ...item, category: to } : item;
   return { transactions: transactions.map(swap), fixedItems: fixedItems.map(swap) };
 }
 

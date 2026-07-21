@@ -25,10 +25,31 @@ function defaultState() {
     settlements: [],
     transactions: [],
     fixedItems: [],
+    // categories가 전체 목록(기본 이름변경 가능), customCategories는 삭제 가능한 사용자 추가분 추적
+    categories: { expense: [...expenseCategories], income: [...incomeCategories] },
     customCategories: { expense: [], income: [] },
     budgets: {},
     budgetPromptDismissed: "",
   };
+}
+
+// 구버전 상태(categories 없음)를 기본 + 사용자 추가분으로 이행.
+// categories가 있어도 customCategories에만 있는 이름은 병합(append) —
+// 구버전 앱이 customCategories만 갱신한 상태를 동기화로 받아도 추가분이 유실되지 않게 한다
+function normalizeCategories(parsed) {
+  const build = (type, defaults) => {
+    const list = parsed.categories?.[type]?.length ? [...parsed.categories[type]] : [...defaults];
+    (parsed.customCategories?.[type] || []).forEach((name) => {
+      if (!list.includes(name)) list.push(name);
+    });
+    return list;
+  };
+  return { expense: build("expense", expenseCategories), income: build("income", incomeCategories) };
+}
+
+// 모든 달의 봉투 카테고리 이름(고아 포함) — 이름변경 충돌 검증용
+function allBudgetEnvelopeNames() {
+  return Object.values(state.budgets || {}).flatMap((budget) => (budget.envelopes || []).map((e) => e.category));
 }
 
 function loadState() {
@@ -44,6 +65,7 @@ function loadState() {
       settlements: parsed.settlements || [],
       transactions: parsed.transactions || [],
       fixedItems: parsed.fixedItems || [],
+      categories: normalizeCategories(parsed),
       customCategories: {
         expense: parsed.customCategories?.expense || [],
         income: parsed.customCategories?.income || [],
@@ -333,8 +355,36 @@ function renderNav() {
 /* ---------- 지출/수입 입력 시트 ---------- */
 
 function categoriesFor(type) {
+  const stored = state.categories?.[type];
+  if (stored?.length) return stored;
   const base = type === "income" ? incomeCategories : expenseCategories;
   return [...base, ...(state.customCategories?.[type] || [])];
+}
+
+function addCategoryToState(type, name) {
+  state = {
+    ...state,
+    categories: { ...state.categories, [type]: [...categoriesFor(type), name] },
+    customCategories: { ...state.customCategories, [type]: [...(state.customCategories?.[type] || []), name] },
+  };
+  saveState();
+}
+
+// 이름 변경을 모든 곳에 이관: 거래·고정 항목(타입 한정)·봉투(지출만)·카테고리 목록
+function renameCategoryEverywhere(type, from, to) {
+  const migrated = renameCategoryInRecords(state.transactions, state.fixedItems, from, to, type);
+  state = {
+    ...state,
+    transactions: migrated.transactions,
+    fixedItems: migrated.fixedItems,
+    budgets: type === "expense" ? renameCategoryInBudgets(state.budgets, from, to) : state.budgets,
+    categories: { ...state.categories, [type]: categoriesFor(type).map((c) => (c === from ? to : c)) },
+    customCategories: {
+      ...state.customCategories,
+      [type]: (state.customCategories?.[type] || []).map((c) => (c === from ? to : c)),
+    },
+  };
+  saveState();
 }
 
 function openTransactionSheet(type) {
@@ -389,11 +439,7 @@ function openTransactionSheet(type) {
         window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
         return;
       }
-      state = {
-        ...state,
-        customCategories: { ...state.customCategories, [type]: [...(state.customCategories?.[type] || []), name] },
-      };
-      saveState();
+      addCategoryToState(type, name);
       selectedCategory = name;
       renderChips();
     });
@@ -1012,12 +1058,13 @@ function settingsFixedRowHtml(item) {
   `;
 }
 
-function settingsCategoryRowHtml(type, name, index) {
+function settingsCategoryRowHtml(type, name) {
+  const custom = (state.customCategories?.[type] || []).includes(name);
   return `
-    <button type="button" class="settings-row" data-cat-type="${type}" data-cat-index="${index}">
+    <button type="button" class="settings-row" data-cat-type="${type}" data-cat-name="${escapeHtml(name)}">
       <span class="settings-row-main">
         <span>${escapeHtml(name)}</span>
-        <span class="sub">${type === "income" ? "수입" : "지출"}</span>
+        <span class="sub">${type === "income" ? "수입" : "지출"}${custom ? " · 직접 추가" : ""}</span>
       </span>
       <span class="settings-row-side"><span class="chev">›</span></span>
     </button>
@@ -1072,14 +1119,14 @@ function renderSettings(m) {
         <button class="secondary-button" data-open-fixed>고정 항목 추가</button>
       </section>
       <section class="card">
-        <div class="section-title-row"><h2 class="section-title">카테고리</h2><span class="section-note">직접 추가한 것만</span></div>
-        ${
-          state.customCategories.expense.length + state.customCategories.income.length
-            ? `<div class="settings-list">${["expense", "income"]
-                .flatMap((type) => state.customCategories[type].map((name, i) => settingsCategoryRowHtml(type, name, i)))
-                .join("")}</div>`
-            : `<p class="empty-state">기록 입력의 ‘+ 추가’ 칩으로 만듭니다.</p>`
-        }
+        <div class="section-title-row"><h2 class="section-title">카테고리</h2><span class="section-note">탭해서 이름변경</span></div>
+        <div class="settings-list">${["expense", "income"]
+          .flatMap((type) =>
+            categoriesFor(type)
+              .filter((name) => !(type === "expense" && name === "고정비"))
+              .map((name) => settingsCategoryRowHtml(type, name)),
+          )
+          .join("")}</div>
       </section>
       <section class="card">
         <div class="section-title-row"><h2 class="section-title">동기화</h2><span class="section-note">${syncEnabled() ? "켜짐" : "꺼짐"}</span></div>
@@ -1146,8 +1193,8 @@ function bindSettingsEvents() {
   document.querySelectorAll("[data-cat-type]").forEach((button) => {
     button.addEventListener("click", () => {
       const type = button.dataset.catType;
-      const name = state.customCategories?.[type]?.[Number(button.dataset.catIndex)];
-      if (name) openCategoryManageSheet(type, name);
+      const name = button.dataset.catName;
+      if (name && categoriesFor(type).includes(name)) openCategoryManageSheet(type, name);
     });
   });
 
@@ -1353,6 +1400,7 @@ function openFixedManageSheet(item) {
 }
 
 function openCategoryManageSheet(type, name) {
+  const isCustom = (state.customCategories?.[type] || []).includes(name);
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.innerHTML = `
@@ -1363,7 +1411,7 @@ function openCategoryManageSheet(type, name) {
       </div>
       <div class="form-grid">
         <button class="secondary-button" data-manage-rename>이름 변경</button>
-        <button class="danger-button" data-manage-delete>삭제</button>
+        ${isCustom ? `<button class="danger-button" data-manage-delete>삭제</button>` : `<p class="empty-state">기본 카테고리는 삭제할 수 없고 이름만 바꿀 수 있습니다.</p>`}
       </div>
     </section>
   `;
@@ -1373,35 +1421,28 @@ function openCategoryManageSheet(type, name) {
   modal.querySelector("[data-manage-rename]").addEventListener("click", () => {
     const input = window.prompt("새 이름 (8자 이내)", name);
     if (input === null) return;
-    const others = categoriesFor(type).filter((c) => c !== name);
-    const next = validateNewCategory(input, others);
+    // 지출은 고아 봉투 이름과의 충돌도 막는다(같은 이름 봉투 이중 생성 방지)
+    const reserved = type === "expense" ? [...categoriesFor(type), ...allBudgetEnvelopeNames()] : categoriesFor(type);
+    const next = validateNewCategory(input, reserved.filter((c) => c !== name));
     if (!next) {
       window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
       return;
     }
     if (next === name) { modal.remove(); return; }
-    const migrated = renameCategoryInRecords(state.transactions, state.fixedItems, name, next);
-    setState((prev) => ({
-      ...prev,
-      transactions: migrated.transactions,
-      fixedItems: migrated.fixedItems,
-      budgets: renameCategoryInBudgets(prev.budgets, name, next),
-      customCategories: {
-        ...prev.customCategories,
-        [type]: prev.customCategories[type].map((c) => (c === name ? next : c)),
-      },
-      toast: "과거 기록까지 이름을 바꿨습니다.",
-    }));
+    renameCategoryEverywhere(type, name, next);
+    state = { ...state, toast: "과거 기록까지 이름을 바꿨습니다." };
+    render();
     modal.remove();
     clearToastSoon();
   });
-  modal.querySelector("[data-manage-delete]").addEventListener("click", () => {
+  modal.querySelector("[data-manage-delete]")?.addEventListener("click", () => {
     if (!window.confirm("카테고리를 삭제할까요? 과거 기록은 그대로 남습니다.")) return;
     setState((prev) => ({
       ...prev,
+      categories: { ...prev.categories, [type]: categoriesFor(type).filter((c) => c !== name) },
       customCategories: {
         ...prev.customCategories,
-        [type]: prev.customCategories[type].filter((c) => c !== name),
+        [type]: (prev.customCategories?.[type] || []).filter((c) => c !== name),
       },
       toast: "카테고리를 삭제했습니다.",
     }));
@@ -1420,6 +1461,7 @@ function applyServerState(payload, toastText) {
     ...defaultState(),
     ...payload,
     settings: { ...defaultState().settings, ...payload.settings },
+    categories: normalizeCategories(payload),
     customCategories: {
       expense: payload.customCategories?.expense || [],
       income: payload.customCategories?.income || [],
@@ -1480,7 +1522,7 @@ function openBudgetSheet(targetMonth) {
 
   // 봉투 목록 = 지출 카테고리(고정비 제외) + 삭제된 카테고리의 기존 봉투(저장 시 소멸 방지)
   const categoryList = () => {
-    const base = [...expenseCategories, ...(state.customCategories?.expense || [])].filter((c) => c !== "고정비");
+    const base = categoriesFor("expense").filter((c) => c !== "고정비");
     const orphaned = (state.budgets?.[targetMonth]?.envelopes || []).map((e) => e.category).filter((c) => !base.includes(c));
     return [...base, ...orphaned];
   };
@@ -1534,14 +1576,14 @@ function openBudgetSheet(targetMonth) {
     warnEl.classList.toggle("visible", left < 0);
   };
 
-  // 카테고리 칸을 상태 기준으로 다시 그린다. 입력값은 values로 보존, 커스텀은 이름변경 가능
+  // 카테고리 칸을 상태 기준으로 다시 그린다. 입력값은 values로 보존, 기본·커스텀 모두 이름변경 가능
   const renderCats = (values, focusName) => {
-    const customs = state.customCategories?.expense || [];
+    const renamable = categoriesFor("expense");
     catsBox.innerHTML = categoryList()
       .map(
         (category, i) => `
       <div class="field">
-        <label for="budgetEnv${i}">${escapeHtml(category)}${customs.includes(category) ? ` <button type="button" class="inline-edit" data-cat-rename="${escapeHtml(category)}">이름변경</button>` : ""}</label>
+        <label for="budgetEnv${i}">${escapeHtml(category)}${renamable.includes(category) ? ` <button type="button" class="inline-edit" data-cat-rename="${escapeHtml(category)}">이름변경</button>` : ""}</label>
         <input id="budgetEnv${i}" data-cat-input="${escapeHtml(category)}" inputmode="numeric" placeholder="봉투 없음" value="${escapeHtml(String(values[category] || ""))}" />
       </div>`,
       )
@@ -1551,8 +1593,8 @@ function openBudgetSheet(targetMonth) {
         const from = button.dataset.catRename;
         const input = window.prompt("새 이름 (8자 이내)", from);
         if (input === null) return;
-        const others = [...expenseCategories, ...(state.customCategories?.expense || [])].filter((c) => c !== from);
-        const to = validateNewCategory(input, others);
+        // 고아 봉투 이름과 겹치면 같은 이름 봉투가 이중으로 생기므로 함께 검증
+        const to = validateNewCategory(input, [...categoriesFor("expense"), ...allBudgetEnvelopeNames()].filter((c) => c !== from));
         if (!to) {
           window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
           return;
@@ -1561,18 +1603,7 @@ function openBudgetSheet(targetMonth) {
         const kept = readValues();
         kept[to] = kept[from];
         delete kept[from];
-        const migrated = renameCategoryInRecords(state.transactions, state.fixedItems, from, to);
-        state = {
-          ...state,
-          transactions: migrated.transactions,
-          fixedItems: migrated.fixedItems,
-          budgets: renameCategoryInBudgets(state.budgets, from, to),
-          customCategories: {
-            ...state.customCategories,
-            expense: (state.customCategories?.expense || []).map((c) => (c === from ? to : c)),
-          },
-        };
-        saveState();
+        renameCategoryEverywhere("expense", from, to);
         render();
         renderCats(kept);
         compute();
@@ -1585,17 +1616,13 @@ function openBudgetSheet(targetMonth) {
   modal.querySelector("[data-add-budget-category]").addEventListener("click", () => {
     const input = window.prompt("새 카테고리 이름 (8자 이내)");
     if (input === null) return;
-    const name = validateNewCategory(input, [...expenseCategories, ...(state.customCategories?.expense || [])]);
+    const name = validateNewCategory(input, categoriesFor("expense"));
     if (!name) {
       window.alert("빈 이름, 8자 초과, 이미 있는 이름은 쓸 수 없습니다.");
       return;
     }
     const kept = readValues();
-    state = {
-      ...state,
-      customCategories: { ...state.customCategories, expense: [...(state.customCategories?.expense || []), name] },
-    };
-    saveState();
+    addCategoryToState("expense", name);
     render();
     renderCats(kept, name);
     compute();
@@ -1737,6 +1764,7 @@ async function importData(event) {
         ...defaultState(),
         ...data,
         settings: { ...defaultState().settings, ...data.settings },
+        categories: normalizeCategories(data),
         customCategories: {
           expense: data.customCategories?.expense || [],
           income: data.customCategories?.income || [],
