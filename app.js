@@ -2228,5 +2228,18 @@ if (!state.hasOnboarded && !document.querySelector(".wizard-backdrop")) openOnbo
 runStartupSync().finally(() => maybePromptBudget());
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  // 새 배포가 활성화되면 화면을 한 번 자동 새로고침 — 옛 캐시에 갇히지 않게 한다.
+  // 첫 설치(controller 없음)에는 걸지 않아 불필요한 재로딩을 피한다
+  let swRefreshing = false;
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (swRefreshing) return;
+      swRefreshing = true;
+      location.reload();
+    });
+  }
+  navigator.serviceWorker
+    .register("./sw.js")
+    .then((registration) => registration.update())
+    .catch(() => {});
 }
