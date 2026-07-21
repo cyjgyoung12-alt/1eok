@@ -80,6 +80,21 @@ const txs = [
 ];
 eq("netWorth", L.currentNetWorth({ date: "2026-06-30", total: 25000000 }, txs), 25000000 + 3200000 - 12000);
 
+// 저축은 계좌 간 이체라 순자산에 영향 없음 (지출처럼 빠지면 안 된다)
+const savingTxs = [
+  { type: "saving", amount: 500000, date: "2026-07-25", source: "manual" },
+  { type: "expense", amount: 12000, date: "2026-07-25", source: "manual" },
+];
+eq("netWorth ignores saving", L.currentNetWorth({ date: "2026-06-30", total: 25000000 }, savingTxs), 25000000 - 12000);
+
+// 저축 진행: 채운 금액 / 목표
+const sp = L.savingProgress(1000000, 1300000);
+eq("savingProgress fields", [sp.saved, sp.target, sp.remaining, sp.done], [1000000, 1300000, 300000, false]);
+approx("savingProgress pct", sp.pct, 76.923, 0.01);
+eq("savingProgress done", L.savingProgress(1300000, 1300000).done, true);
+eq("savingProgress over done", L.savingProgress(1500000, 1300000).done, true);
+eq("savingProgress no target", L.savingProgress(50000, 0), { saved: 50000, target: 0, remaining: 0, pct: 0, done: false });
+
 // 도착 예상일
 eq("arrival", L.localDateString(L.arrivalDate(7342000, 1500000, today)).slice(0, 7), "2026-12"); // ceil(4.89)=5개월
 eq("arrival none", L.arrivalDate(7342000, 0, today), null);

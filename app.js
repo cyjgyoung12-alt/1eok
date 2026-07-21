@@ -25,6 +25,9 @@ function defaultState() {
     settlements: [],
     transactions: [],
     fixedItems: [],
+    // 저축은 거래(transactions)가 아니라 별도 배열 — 순자산에 영향 없는 이체이고,
+    // 구버전 클라이언트가 이 데이터를 동기화로 받아도 순자산 계산을 오염시키지 않는다
+    savings: [],
     // categories가 전체 목록(기본 이름변경 가능), customCategories는 삭제 가능한 사용자 추가분 추적
     categories: { expense: [...expenseCategories], income: [...incomeCategories] },
     customCategories: { expense: [], income: [] },
@@ -65,6 +68,7 @@ function loadState() {
       settlements: parsed.settlements || [],
       transactions: parsed.transactions || [],
       fixedItems: parsed.fixedItems || [],
+      savings: parsed.savings || [],
       categories: normalizeCategories(parsed),
       customCategories: {
         expense: parsed.customCategories?.expense || [],
@@ -157,6 +161,12 @@ function getMetrics(currentState) {
   const settleStreak = countSettleStreak(currentState.settlements, currentMonth);
   const grid = buildGrid(currentState.settlements, currentMonth);
 
+  // 이번 달 실제 저축(별도 savings 배열) 대비 미션이 떼어둔 저축액(effSaving)
+  const monthSaving = (currentState.savings || [])
+    .filter((sv) => monthKey(parseDate(sv.date)) === currentMonth)
+    .reduce((sum, sv) => sum + Number(sv.amount || 0), 0);
+  const saving = savingProgress(monthSaving, effSaving);
+
   const monthIncome = monthTx.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount), 0);
   const monthExpense = monthTx.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount), 0);
   const categoryExpenses = monthTx
@@ -178,7 +188,7 @@ function getMetrics(currentState) {
     fixedExpenseSum, monthBudget, dayResults, todayResult, todayDay, streak,
     speed, arrival, basisLabel, settledThisMonth, settleDday, settleStreak,
     grid, monthIncome, monthExpense, categoryExpenses, variableCategoryExpenses,
-    latest, budget: budgetPlan, effectiveSaving: effSaving,
+    latest, budget: budgetPlan, effectiveSaving: effSaving, saving,
   };
 }
 
@@ -286,10 +296,24 @@ function renderMissionCard(m) {
   `;
 }
 
-// 첫 화면 봉투 현황: 봉투가 있는 달에만 표시. 편집은 흐름 탭(카드 탭하면 이동)
+// 저축 진행 한 줄. compact면 금액 소계 줄을 생략(첫 화면용)
+function savingRowHtml(m, compact) {
+  const sp = m.saving;
+  if (!(sp.target > 0)) return "";
+  const pct = Math.min(100, Math.round(sp.pct));
+  const right = sp.done ? "완료 ✓" : `${pct}% · ${money(sp.remaining)} 남음`;
+  return `
+    <div class="budget-row${compact ? " compact" : ""} saving-row">
+      <div class="budget-row-top"><span>저축</span><span class="num">${right}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+      ${compact ? "" : `<div class="budget-row-sub num">${money(sp.saved)} / ${money(Math.round(sp.target))}</div>`}
+    </div>`;
+}
+
+// 첫 화면 봉투 현황: 저축 목표나 봉투가 있으면 표시. 편집은 흐름 탭(카드 탭하면 이동)
 function realityBudgetCardHtml(m) {
-  if (!m.budget || !(m.budget.envelopes || []).length) return "";
-  const status = envelopeStatus(m.budget.envelopes, m.variableCategoryExpenses);
+  const savingRow = savingRowHtml(m, true);
+  const status = m.budget ? envelopeStatus(m.budget.envelopes || [], m.variableCategoryExpenses) : [];
   const rows = status
     .map((s) => {
       const pct = s.amount > 0 ? Math.round((s.spent / s.amount) * 100) : 0;
@@ -300,10 +324,11 @@ function realityBudgetCardHtml(m) {
       </div>`;
     })
     .join("");
+  if (!savingRow && !rows) return "";
   return `
     <button type="button" class="section card budget-card" data-goto-flow>
       <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note">편집은 흐름 탭 ›</span></div>
-      ${rows}
+      ${savingRow}${rows}
     </button>
   `;
 }
@@ -316,6 +341,7 @@ function renderReality(m) {
     <section class="section quick-actions">
       <button class="action-button expense" data-open-transaction="expense">− 지출</button>
       <button class="action-button income" data-open-transaction="income">+ 수입</button>
+      <button class="action-button saving" data-open-transaction="saving">◐ 저축</button>
     </section>
     <section class="section card">
       <p class="hero-label">1억까지 남은 금액</p>
@@ -388,24 +414,28 @@ function renameCategoryEverywhere(type, from, to) {
 }
 
 function openTransactionSheet(type) {
-  let selectedCategory = categoriesFor(type)[0];
+  const isSaving = type === "saving";
+  const titles = { income: "수입 기록", expense: "지출 기록", saving: "저축 기록" };
+  let selectedCategory = isSaving ? "저축" : categoriesFor(type)[0];
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.innerHTML = `
     <section class="sheet" role="dialog" aria-modal="true">
       <div class="sheet-header">
-        <h2 class="sheet-title">${type === "income" ? "수입 기록" : "지출 기록"}</h2>
+        <h2 class="sheet-title">${titles[type]}</h2>
         <button class="ghost-button" data-close-sheet>닫기</button>
       </div>
       <form class="form-grid" data-transaction-form>
         <div class="field">
           <label for="amount">금액</label>
-          <input id="amount" name="amount" inputmode="numeric" placeholder="예: 12000" autofocus />
+          <input id="amount" name="amount" inputmode="numeric" placeholder="${isSaving ? "예: 500000" : "예: 12000"}" autofocus />
         </div>
-        <div class="field">
+        ${isSaving
+          ? `<p class="saving-hint">저축통장·투자계좌로 옮긴 금액입니다. 자산은 줄지 않고, 이번 달 저축이 채워집니다.</p>`
+          : `<div class="field">
           <label>카테고리</label>
           <div class="chips" data-category-chips></div>
-        </div>
+        </div>`}
         <details class="advanced-fields">
           <summary>메모·날짜</summary>
           <div class="field"><label for="title">메모</label><input id="title" name="title" /></div>
@@ -421,6 +451,7 @@ function openTransactionSheet(type) {
 
   const chipsBox = modal.querySelector("[data-category-chips]");
   const renderChips = () => {
+    if (!chipsBox) return;
     const categories = categoriesFor(type);
     chipsBox.innerHTML = categories
       .map((name, i) => `<button class="chip ${name === selectedCategory ? "active" : ""}" type="button" data-pick-category="${i}">${escapeHtml(name)}</button>`)
@@ -450,19 +481,26 @@ function openTransactionSheet(type) {
     const form = new FormData(event.currentTarget);
     const amount = numberFromInput(form.get("amount"));
     if (!amount) return;
-    const transaction = {
+    const record = {
       id: cryptoId(),
       type,
       amount,
-      category: selectedCategory,
-      title: String(form.get("title") || selectedCategory),
+      category: isSaving ? "저축" : selectedCategory,
+      title: String(form.get("title") || (isSaving ? "저축" : selectedCategory)),
       date: String(form.get("date") || localDateString(new Date())),
       source: "manual",
     };
-    const next = { ...state, transactions: [...state.transactions, transaction] };
+    // 저축은 별도 savings 배열(이체 — 순자산·미션·거래 집계와 분리)
+    const next = isSaving
+      ? { ...state, savings: [...(state.savings || []), record] }
+      : { ...state, transactions: [...state.transactions, record] };
     const after = getMetrics(next);
     let toast;
-    if (type === "income") {
+    if (isSaving) {
+      toast = after.saving.target > 0
+        ? `저축 ${money(amount)} 기록 · 이번 달 ${money(after.saving.saved)} / ${money(Math.round(after.saving.target))}`
+        : `저축 ${money(amount)} 기록했습니다.`;
+    } else if (type === "income") {
       toast = `수입 +${money(amount)} 기록했습니다.`;
     } else if (after.monthBudget <= 0) {
       toast = `지출 ${money(amount)} 저장했습니다.`;
@@ -799,12 +837,14 @@ function bindEvents(metrics) {
 /* ---------- 기록 탭 ---------- */
 
 function renderRecord(m) {
-  const recent = state.transactions.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
+  const entries = [...state.transactions, ...(state.savings || [])];
+  const recent = entries.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
   return `
     ${renderHeader()}
     <section class="quick-actions">
       <button class="action-button expense" data-open-transaction="expense">− 지출</button>
       <button class="action-button income" data-open-transaction="income">+ 수입</button>
+      <button class="action-button saving" data-open-transaction="saving">◐ 저축</button>
     </section>
     <section class="section card">
       <div class="section-title-row"><h2 class="section-title">입력 후 현실</h2><span class="section-note">즉시 반영</span></div>
@@ -813,7 +853,7 @@ function renderRecord(m) {
       <div class="money-row"><span>도착 예상</span><strong class="num">${m.arrival ? `${m.arrival.getFullYear()}년 ${m.arrival.getMonth() + 1}월` : "속도 부족"}</strong></div>
     </section>
     <section class="section">
-      <div class="section-title-row"><h2 class="section-title">최근 기록</h2><span class="section-note">${state.transactions.length}건</span></div>
+      <div class="section-title-row"><h2 class="section-title">최근 기록</h2><span class="section-note">${entries.length}건</span></div>
       ${
         recent.length
           ? `<div class="transaction-list">${recent
@@ -825,7 +865,7 @@ function renderRecord(m) {
                       <p class="item-sub">${tx.date.slice(5).replace("-", ".")} · ${escapeHtml(tx.category)}${tx.source === "fixed" ? " · 자동" : ""}</p>
                     </div>
                     <div>
-                      <div class="item-amount num ${tx.type}">${tx.type === "income" ? "+" : "-"}${money(tx.amount)}</div>
+                      <div class="item-amount num ${tx.type}">${tx.type === "income" ? "+" : tx.type === "saving" ? "◐ " : "-"}${money(tx.amount)}</div>
                       ${tx.source === "fixed" ? "" : `<button class="ghost-button" data-delete-transaction="${tx.id}">삭제</button>`}
                     </div>
                   </article>`,
@@ -840,9 +880,11 @@ function renderRecord(m) {
 function bindRecordEvents() {
   document.querySelectorAll("[data-delete-transaction]").forEach((button) => {
     button.addEventListener("click", () => {
+      const id = button.dataset.deleteTransaction;
       setState((prev) => ({
         ...prev,
-        transactions: prev.transactions.filter((tx) => tx.id !== button.dataset.deleteTransaction),
+        transactions: prev.transactions.filter((tx) => tx.id !== id),
+        savings: (prev.savings || []).filter((sv) => sv.id !== id),
         toast: "기록을 삭제했습니다.",
       }));
       clearToastSoon();
@@ -921,10 +963,12 @@ function budgetCardHtml(m) {
     clampedPayday >= 1 && m.today.getDate() >= clampedPayday && !state.budgets?.[nextMonth]
       ? `<button class="secondary-button" data-open-budget="${nextMonth}">${Number(nextMonth.split("-")[1])}월 예산 짜기</button>`
       : "";
+  const savingRow = savingRowHtml(m, false);
   if (!budget) {
     return `
     <section class="card">
-      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note">미설정</span></div>
+      <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note">${savingRow ? "저축만 설정됨" : "미설정"}</span></div>
+      ${savingRow}
       <button class="secondary-button" data-open-budget="${m.currentMonth}">예산 정하기</button>
       ${nextButton}
     </section>`;
@@ -944,6 +988,7 @@ function budgetCardHtml(m) {
   return `
     <section class="card">
       <div class="section-title-row"><h2 class="section-title">이번 달 예산</h2><span class="section-note num">저축 ${money(Math.round(m.effectiveSaving))} · 미션 반영</span></div>
+      ${savingRow}
       ${rows || `<p class="empty-state">봉투가 없습니다. 예산 편집에서 추가하세요.</p>`}
       <button class="secondary-button" data-open-budget="${m.currentMonth}">예산 편집</button>
       ${nextButton}
@@ -1474,6 +1519,7 @@ function applyServerState(payload, toastText) {
     ...defaultState(),
     ...payload,
     settings: { ...defaultState().settings, ...payload.settings },
+    savings: payload.savings || [],
     categories: normalizeCategories(payload),
     customCategories: {
       expense: payload.customCategories?.expense || [],
@@ -1777,6 +1823,7 @@ async function importData(event) {
         ...defaultState(),
         ...data,
         settings: { ...defaultState().settings, ...data.settings },
+        savings: data.savings || [],
         categories: normalizeCategories(data),
         customCategories: {
           expense: data.customCategories?.expense || [],

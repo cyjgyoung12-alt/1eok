@@ -114,12 +114,26 @@ function savingSpeed(settlements, requiredSaving) {
 }
 
 // 결산 당일 거래는 잔고에 반영된 것으로 보고 제외(date > settlement.date만 합산)
+// 저축은 계좌 간 이체라 순자산 불변 — 수입만 더하고 지출만 뺀다
 // 전제: latestSettlement는 non-null (온보딩이 첫 결산을 보장)
 function currentNetWorth(latestSettlement, transactions) {
   const net = transactions
-    .filter((tx) => tx.date > latestSettlement.date)
+    .filter((tx) => tx.date > latestSettlement.date && tx.type !== "saving")
     .reduce((sum, tx) => sum + (tx.type === "income" ? 1 : -1) * Number(tx.amount || 0), 0);
   return Number(latestSettlement.total) + net;
+}
+
+// 이번 달 저축 진행: 실제 저축한 금액 / 목표(미션이 떼어둔 저축액)
+function savingProgress(saved, target) {
+  const s = Number(saved || 0);
+  const t = Number(target || 0);
+  return {
+    saved: s,
+    target: t,
+    remaining: Math.max(0, t - s),
+    pct: t > 0 ? (s / t) * 100 : 0,
+    done: t > 0 && s >= t,
+  };
 }
 
 // 공백 정리 후 빈값·8자 초과·중복이면 null, 아니면 정규화된 이름
@@ -219,7 +233,7 @@ const api = {
   pad, localDateString, parseDate, monthKey, monthDiff, daysInMonth,
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
-  settlementDeltas, savingSpeed, currentNetWorth, arrivalDate,
+  settlementDeltas, savingSpeed, currentNetWorth, savingProgress, arrivalDate,
   validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares,
   effectiveMonthlySaving, envelopeStatus, shouldPromptBudget, renameCategoryInBudgets,
 };
