@@ -940,41 +940,72 @@ function renderRecord(m) {
 // 조각 색 위에서 읽히는 라벨 색 (PORTFOLIO_COLORS와 짝)
 const DONUT_LABEL_COLORS = ["#06281b", "#f2f4f7", "#0b0d10", "#f2f4f7", "#0b0d10"];
 
-// 기록 탭: 이번 달 지출 대형 도넛 — 라벨이 조각 안에 있고, 탭하면 중앙에 금액·%
-// (저축은 지출이 아니라 제외, 고정 항목은 이름으로 표시)
+// 기록 탭: 이번 달 지출 대형 도넛 — 8% 이상은 조각 안 라벨, 미만은 지시선으로 바깥 라벨.
+// 탭하면 중앙에 금액·% (저축은 지출이 아니라 제외, 고정 항목은 이름으로 표시)
 function spendDonutCardHtml(m) {
   const shares = categoryShares(m.spendBreakdown, PORTFOLIO_COLORS.length);
   if (!shares.length) return "";
   const total = shares.reduce((sum, share) => sum + share.amount, 0);
+  const CX = 170;
+  const CY = 120;
   const R = 78;
+  const SW = 44;
   const C = 2 * Math.PI * R;
   const gap = shares.length > 1 ? 3 : 0;
   let offset = 0;
   const circles = [];
-  const labels = [];
+  const innerLabels = [];
+  const smallSlices = [];
   shares.forEach((share, i) => {
     const len = (share.pct / 100) * C;
     const drawn = Math.max(0, len - gap);
     circles.push(
-      `<circle class="slice" data-donut-slice data-name="${escapeHtml(share.name)}" data-amount="${share.amount}" data-pct="${share.pct.toFixed(1)}" r="${R}" cx="120" cy="120" fill="none" stroke="${PORTFOLIO_COLORS[i]}" stroke-width="44" stroke-dasharray="${drawn} ${C - drawn}" stroke-dashoffset="${-offset}" />`,
+      `<circle class="slice" data-donut-slice data-name="${escapeHtml(share.name)}" data-amount="${share.amount}" data-pct="${share.pct.toFixed(1)}" r="${R}" cx="${CX}" cy="${CY}" fill="none" stroke="${PORTFOLIO_COLORS[i]}" stroke-width="${SW}" stroke-dasharray="${drawn} ${C - drawn}" stroke-dashoffset="${-offset}" />`,
     );
+    const mid = ((offset + len / 2) / C) * 2 * Math.PI - Math.PI / 2;
     if (share.pct >= 8) {
-      const mid = ((offset + len / 2) / C) * 2 * Math.PI - Math.PI / 2;
-      const lx = 120 + Math.cos(mid) * R;
-      const ly = 120 + Math.sin(mid) * R;
-      labels.push(
+      const lx = CX + Math.cos(mid) * R;
+      const ly = CY + Math.sin(mid) * R;
+      innerLabels.push(
         `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="${DONUT_LABEL_COLORS[i]}">${escapeHtml(share.name)}</text>`,
       );
+    } else {
+      smallSlices.push({ mid, name: share.name, right: Math.cos(mid) >= 0 });
     }
     offset += len;
   });
+
+  // 8% 미만: 조각 가장자리 → 꺾인 지시선 → 바깥 라벨. 같은 쪽 라벨은 세로로 밀어 겹침 방지
+  const outerParts = [];
+  ["left", "right"].forEach((side) => {
+    const list = smallSlices.filter((o) => (side === "right" ? o.right : !o.right));
+    list.sort((a, b) => Math.sin(a.mid) - Math.sin(b.mid));
+    let prevY = -Infinity;
+    list.forEach((o) => {
+      const x0 = CX + Math.cos(o.mid) * (R + SW / 2);
+      const y0 = CY + Math.sin(o.mid) * (R + SW / 2);
+      const ex = CX + Math.cos(o.mid) * 116;
+      let ey = CY + Math.sin(o.mid) * 116;
+      ey = Math.min(Math.max(Math.max(ey, prevY + 15), 12), 228);
+      prevY = ey;
+      const dir = side === "right" ? 1 : -1;
+      const hx = ex + dir * 8;
+      const name = o.name.length > 6 ? `${o.name.slice(0, 6)}…` : o.name;
+      outerParts.push(
+        `<polyline points="${x0.toFixed(1)},${y0.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)} ${hx.toFixed(1)},${ey.toFixed(1)}" fill="none" stroke="#3a404b" stroke-width="1" />`,
+        `<text class="out-label" x="${(hx + dir * 3).toFixed(1)}" y="${ey.toFixed(1)}" text-anchor="${side === "right" ? "start" : "end"}" dominant-baseline="middle">${escapeHtml(name)}</text>`,
+      );
+    });
+  });
+
   return `
     <section class="section card">
       <div class="section-title-row"><h2 class="section-title">이번 달 지출</h2><span class="section-note">${m.today.getMonth() + 1}월 · 조각을 탭하면 상세</span></div>
       <div class="big-donut" data-spend-donut data-total="${total}">
-        <svg viewBox="0 0 240 240" role="img" aria-label="이번 달 지출 비중">
-          <g transform="rotate(-90 120 120)">${circles.join("")}</g>
-          ${labels.join("")}
+        <svg viewBox="0 0 340 240" role="img" aria-label="이번 달 지출 비중">
+          <g transform="rotate(-90 ${CX} ${CY})">${circles.join("")}</g>
+          ${innerLabels.join("")}
+          ${outerParts.join("")}
         </svg>
         <div class="donut-center">
           <span class="c-name" data-c-name>지출 합계</span>

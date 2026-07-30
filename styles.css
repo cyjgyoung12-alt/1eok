@@ -198,7 +198,8 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .budget-warn.visible { display: block; }
 
 /* 지출 대형 도넛: 라벨이 조각 안, 탭하면 중앙에 상세 */
-.big-donut { position: relative; width: min(100%, 300px); margin: 4px auto 0; }
+.big-donut { position: relative; width: min(100%, 340px); margin: 4px auto 0; }
+.big-donut text.out-label { font-size: 10px; font-weight: 600; fill: var(--muted); }
 .big-donut svg { display: block; width: 100%; }
 .big-donut .slice { cursor: pointer; transition: opacity 0.15s; }
 .big-donut.has-sel .slice:not(.sel) { opacity: 0.35; }
