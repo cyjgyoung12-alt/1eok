@@ -182,6 +182,15 @@ function getMetrics(currentState) {
       acc[tx.category] = (acc[tx.category] || 0) + Number(tx.amount || 0);
       return acc;
     }, {});
+  // 지출 도넛용: 고정 항목은 이름(유튜브 프리미엄 등)으로, 수동 지출은 카테고리로 집계
+  // — "고정비" 한 덩어리로는 뭔지 알 수 없으므로 항목 단위로 펼친다
+  const spendBreakdown = monthTx
+    .filter((tx) => tx.type === "expense")
+    .reduce((acc, tx) => {
+      const key = tx.source === "fixed" ? tx.title || tx.category : tx.category;
+      acc[key] = (acc[key] || 0) + Number(tx.amount || 0);
+      return acc;
+    }, {});
   // 봉투 소진용: 고정비 자동 기록 제외 — 봉투 등식(수입−고정비−저축−봉투)이 고정비를 이미 차감했으므로
   const variableCategoryExpenses = monthTx
     .filter((tx) => tx.type === "expense" && tx.source !== "fixed")
@@ -194,7 +203,7 @@ function getMetrics(currentState) {
     today, currentMonth, netWorth, remaining, progress, requiredSaving,
     fixedExpenseSum, monthBudget, dayResults, todayResult, todayDay, streak,
     speed, arrival, basisLabel, settledThisMonth, settleDday, settleStreak,
-    grid, monthIncome, monthExpense, categoryExpenses, variableCategoryExpenses,
+    grid, monthIncome, monthExpense, categoryExpenses, variableCategoryExpenses, spendBreakdown,
     latest, budget: budgetPlan, savingTarget, monthSaving, saving, monthVariableSpent,
   };
 }
@@ -927,20 +936,50 @@ function renderRecord(m) {
   `;
 }
 
-// 기록 탭: 이번 달 카테고리 지출 도넛 (고정비 포함, 저축은 지출이 아니라 제외)
+// 조각 색 위에서 읽히는 라벨 색 (PORTFOLIO_COLORS와 짝)
+const DONUT_LABEL_COLORS = ["#06281b", "#f2f4f7", "#0b0d10", "#f2f4f7", "#0b0d10"];
+
+// 기록 탭: 이번 달 지출 대형 도넛 — 라벨이 조각 안에 있고, 탭하면 중앙에 금액·%
+// (저축은 지출이 아니라 제외, 고정 항목은 이름으로 표시)
 function spendDonutCardHtml(m) {
-  const shares = categoryShares(m.categoryExpenses, PORTFOLIO_COLORS.length);
+  const shares = categoryShares(m.spendBreakdown, PORTFOLIO_COLORS.length);
   if (!shares.length) return "";
   const total = shares.reduce((sum, share) => sum + share.amount, 0);
+  const R = 78;
+  const C = 2 * Math.PI * R;
+  const gap = shares.length > 1 ? 3 : 0;
+  let offset = 0;
+  const circles = [];
+  const labels = [];
+  shares.forEach((share, i) => {
+    const len = (share.pct / 100) * C;
+    const drawn = Math.max(0, len - gap);
+    circles.push(
+      `<circle class="slice" data-donut-slice data-name="${escapeHtml(share.name)}" data-amount="${share.amount}" data-pct="${share.pct.toFixed(1)}" r="${R}" cx="120" cy="120" fill="none" stroke="${PORTFOLIO_COLORS[i]}" stroke-width="44" stroke-dasharray="${drawn} ${C - drawn}" stroke-dashoffset="${-offset}" />`,
+    );
+    if (share.pct >= 8) {
+      const mid = ((offset + len / 2) / C) * 2 * Math.PI - Math.PI / 2;
+      const lx = 120 + Math.cos(mid) * R;
+      const ly = 120 + Math.sin(mid) * R;
+      labels.push(
+        `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="${DONUT_LABEL_COLORS[i]}">${escapeHtml(share.name)}</text>`,
+      );
+    }
+    offset += len;
+  });
   return `
     <section class="section card">
-      <div class="section-title-row"><h2 class="section-title">이번 달 지출</h2><span class="section-note">${m.today.getMonth() + 1}월 · 고정비 포함</span></div>
-      <div class="portfolio-wrap">
-        <div class="portfolio-donut">
-          ${donutSvgHtml(shares, "카테고리별 지출 비중")}
-          <div class="portfolio-center"><strong class="num">${compactMoney(total)}</strong><span>지출 합계</span></div>
+      <div class="section-title-row"><h2 class="section-title">이번 달 지출</h2><span class="section-note">${m.today.getMonth() + 1}월 · 조각을 탭하면 상세</span></div>
+      <div class="big-donut" data-spend-donut data-total="${total}">
+        <svg viewBox="0 0 240 240" role="img" aria-label="이번 달 지출 비중">
+          <g transform="rotate(-90 120 120)">${circles.join("")}</g>
+          ${labels.join("")}
+        </svg>
+        <div class="donut-center">
+          <span class="c-name" data-c-name>지출 합계</span>
+          <strong class="c-amt num" data-c-amt>${compactMoney(total)}</strong>
+          <span class="c-pct num" data-c-pct></span>
         </div>
-        <div class="portfolio-list">${donutListHtml(shares)}</div>
       </div>
     </section>`;
 }
@@ -950,6 +989,35 @@ function bindRecordEvents() {
   acc?.addEventListener("toggle", () => {
     recordAccOpen = acc.open;
   });
+
+  // 지출 도넛: 조각 탭 → 중앙에 이름·금액·%, 같은 조각 다시 탭 → 합계로 복귀
+  const donut = document.querySelector("[data-spend-donut]");
+  if (donut) {
+    const nameEl = donut.querySelector("[data-c-name]");
+    const amtEl = donut.querySelector("[data-c-amt]");
+    const pctEl = donut.querySelector("[data-c-pct]");
+    const resetCenter = () => {
+      donut.classList.remove("has-sel");
+      donut.querySelectorAll(".slice.sel").forEach((s) => s.classList.remove("sel"));
+      nameEl.textContent = "지출 합계";
+      amtEl.textContent = compactMoney(Number(donut.dataset.total));
+      pctEl.textContent = "";
+    };
+    donut.querySelectorAll("[data-donut-slice]").forEach((slice) => {
+      slice.addEventListener("click", () => {
+        if (slice.classList.contains("sel")) {
+          resetCenter();
+          return;
+        }
+        donut.querySelectorAll(".slice.sel").forEach((s) => s.classList.remove("sel"));
+        slice.classList.add("sel");
+        donut.classList.add("has-sel");
+        nameEl.textContent = slice.dataset.name;
+        amtEl.textContent = money(Number(slice.dataset.amount));
+        pctEl.textContent = `${slice.dataset.pct}%`;
+      });
+    });
+  }
   document.querySelectorAll("[data-delete-transaction]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.deleteTransaction;

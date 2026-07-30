@@ -197,6 +197,17 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .budget-warn { display: none; margin: 0; font-size: 12px; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; }
 .budget-warn.visible { display: block; }
 
+/* 지출 대형 도넛: 라벨이 조각 안, 탭하면 중앙에 상세 */
+.big-donut { position: relative; width: min(100%, 300px); margin: 4px auto 0; }
+.big-donut svg { display: block; width: 100%; }
+.big-donut .slice { cursor: pointer; transition: opacity 0.15s; }
+.big-donut.has-sel .slice:not(.sel) { opacity: 0.35; }
+.big-donut text { font-size: 11px; font-weight: 700; pointer-events: none; }
+.donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-align: center; pointer-events: none; }
+.donut-center .c-name { font-size: 12px; color: var(--muted); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.donut-center .c-amt { font-size: 18px; font-weight: 800; }
+.donut-center .c-pct { font-size: 12px; color: var(--mint); min-height: 15px; }
+
 /* 당겨서 새로고침: #app 밖 고정 요소라 render()와 독립 */
 .ptr {
   position: fixed; top: env(safe-area-inset-top, 0px); left: 50%; z-index: 60;
