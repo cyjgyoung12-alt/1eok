@@ -543,6 +543,7 @@ function openTransactionSheet(type) {
 /* ---------- 유틸 ---------- */
 
 let toastTimer = 0;
+let recordAccOpen = false; // 기록 아코디언 펼침 상태 (렌더 간 유지, 저장 안 함)
 
 function bindSheetClose(modal) {
   modal.querySelector("[data-close-sheet]").addEventListener("click", () => modal.remove());
@@ -881,14 +882,19 @@ function renderRecord(m) {
     return parts.join(" · ");
   };
 
+  const todayGroup = groups.find((g) => g.date === todayStr);
   return `
     ${renderHeader()}
-    <section class="quick-actions big">
+    <section class="quick-actions big stacked">
       <button class="action-button expense" data-open-transaction="expense">− 지출</button>
       <button class="action-button income" data-open-transaction="income">+ 수입</button>
     </section>
     ${recordedDays > 0 ? `<p class="record-streak num">이번 달 ${recordedDays}일째 기록</p>` : ""}
-    <section class="section">
+    <details class="record-acc"${recordAccOpen ? " open" : ""} data-record-acc>
+      <summary>
+        <span>기록 ${entries.length}건</span>
+        <span class="num acc-side">${todayGroup ? `오늘 ${daySummary(todayGroup.items)}` : ""}<span class="acc-chev">▾</span></span>
+      </summary>
       ${
         groups.length
           ? groups
@@ -916,11 +922,15 @@ function renderRecord(m) {
               .join("")
           : `<div class="card empty-state">첫 기록을 남겨보세요. 금액만 넣으면 3초면 됩니다.</div>`
       }
-    </section>
+    </details>
   `;
 }
 
 function bindRecordEvents() {
+  const acc = document.querySelector("[data-record-acc]");
+  acc?.addEventListener("toggle", () => {
+    recordAccOpen = acc.open;
+  });
   document.querySelectorAll("[data-delete-transaction]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.deleteTransaction;
