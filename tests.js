@@ -207,6 +207,16 @@ const renamedBudgets = L.renameCategoryInBudgets(
 );
 eq("budget envelope renamed", renamedBudgets["2026-08"].envelopes.map((e) => e.category), ["연애", "식비"]);
 
+// 이번 달 기록한 날 수: 수동 기록의 고유 날짜만, 자동(fixed)·다른 달 제외
+eq("recordedDayCount", L.recordedDayCount([
+  { date: "2026-07-20", source: "manual" },
+  { date: "2026-07-20", source: "manual" }, // 같은 날 두 건 = 1일
+  { date: "2026-07-21", source: "manual" },
+  { date: "2026-07-25", source: "fixed" },  // 자동 기록은 행동 아님
+  { date: "2026-06-30", source: "manual" }, // 다른 달
+], "2026-07"), 2);
+eq("recordedDayCount empty", L.recordedDayCount([], "2026-07"), 0);
+
 // 동기화 방향: 최신 쪽이 이긴다 (LWW)
 eq("sync both missing", L.syncDirection(undefined, undefined), "none");
 eq("sync server empty", L.syncDirection("2026-07-20T10:00:00.000Z", null), "push");

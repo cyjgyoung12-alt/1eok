@@ -156,6 +156,19 @@ function renameCategoryInRecords(transactions, fixedItems, from, to, type) {
   return { transactions: transactions.map(swap), fixedItems: fixedItems.map(swap) };
 }
 
+// 이번 달 기록한 날 수(행위 연속성 보상용): 수동 기록의 고유 날짜만 센다.
+// 자동(fixed) 기록은 행동이 아니므로 제외, 빈 날은 판정 없음
+function recordedDayCount(entries, month) {
+  const days = new Set();
+  entries.forEach((entry) => {
+    if (entry.source === "fixed") return;
+    const date = String(entry.date || "");
+    if (date.slice(0, 7) !== month) return;
+    days.add(date);
+  });
+  return days.size;
+}
+
 // 이번 달 유효 저축액: 예산 시트의 저축이 필요 월저축보다 클 때만 대체(목표 페이스 보호)
 function effectiveMonthlySaving(requiredSaving, budgetSaving) {
   const budget = Number(budgetSaving || 0);
@@ -237,7 +250,7 @@ const api = {
   pad, localDateString, parseDate, monthKey, monthDiff, daysInMonth,
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
-  settlementDeltas, savingSpeed, currentNetWorth, savingProgress, arrivalDate,
+  settlementDeltas, savingSpeed, currentNetWorth, savingProgress, arrivalDate, recordedDayCount,
   validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares,
   effectiveMonthlySaving, envelopeStatus, shouldPromptBudget, renameCategoryInBudgets,
 };

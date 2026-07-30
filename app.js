@@ -858,39 +858,63 @@ function bindEvents(metrics) {
 
 function renderRecord(m) {
   const entries = [...state.transactions, ...(state.savings || [])];
-  const recent = entries.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
+  const recent = entries.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
+  const recordedDays = recordedDayCount(entries, m.currentMonth);
+
+  // 날짜별 그룹 (최신순 유지)
+  const groups = [];
+  recent.forEach((tx) => {
+    const last = groups[groups.length - 1];
+    if (last && last.date === tx.date) last.items.push(tx);
+    else groups.push({ date: tx.date, items: [tx] });
+  });
+  const todayStr = localDateString(m.today);
+  const yesterdayStr = localDateString(new Date(m.today.getFullYear(), m.today.getMonth(), m.today.getDate() - 1));
+  const dayLabel = (date) =>
+    date === todayStr ? "오늘" : date === yesterdayStr ? "어제" : `${Number(date.slice(5, 7))}.${Number(date.slice(8, 10))}`;
+  const daySummary = (items) => {
+    const sum = (type) => items.filter((t) => t.type === type).reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const parts = [];
+    if (sum("expense")) parts.push(`-${money(sum("expense"))}`);
+    if (sum("income")) parts.push(`+${money(sum("income"))}`);
+    if (sum("saving")) parts.push(`저축 ${money(sum("saving"))}`);
+    return parts.join(" · ");
+  };
+
   return `
     ${renderHeader()}
-    <section class="quick-actions">
+    <section class="quick-actions big">
       <button class="action-button expense" data-open-transaction="expense">− 지출</button>
       <button class="action-button income" data-open-transaction="income">+ 수입</button>
     </section>
-    <section class="section card">
-      <div class="section-title-row"><h2 class="section-title">입력 후 현실</h2><span class="section-note">즉시 반영</span></div>
-      <div class="money-row"><span>오늘 잔여</span><strong class="num">${m.monthBudget > 0 ? money(Math.round(m.todayResult.budget - m.todayResult.spent)) : "—"}</strong></div>
-      <div class="money-row"><span>1억까지</span><strong class="num">${readableMoney(m.remaining)}</strong></div>
-      <div class="money-row"><span>도착 예상</span><strong class="num">${m.arrival ? `${m.arrival.getFullYear()}년 ${m.arrival.getMonth() + 1}월` : "속도 부족"}</strong></div>
-    </section>
+    ${recordedDays > 0 ? `<p class="record-streak num">이번 달 ${recordedDays}일째 기록</p>` : ""}
     <section class="section">
-      <div class="section-title-row"><h2 class="section-title">최근 기록</h2><span class="section-note">${entries.length}건</span></div>
       ${
-        recent.length
-          ? `<div class="transaction-list">${recent
+        groups.length
+          ? groups
               .map(
-                (tx) => `
-                  <article class="transaction-item">
-                    <div>
-                      <p class="item-title">${escapeHtml(tx.title || tx.category)}</p>
-                      <p class="item-sub">${tx.date.slice(5).replace("-", ".")} · ${escapeHtml(tx.category)}${tx.source === "fixed" ? " · 자동" : ""}</p>
-                    </div>
-                    <div>
-                      <div class="item-amount num ${tx.type}">${tx.type === "income" ? "+" : tx.type === "saving" ? "◐ " : "-"}${money(tx.amount)}</div>
-                      ${tx.source === "fixed" ? "" : `<button class="ghost-button" data-delete-transaction="${tx.id}">삭제</button>`}
-                    </div>
-                  </article>`,
+                (group) => `
+                <div class="day-group">
+                  <div class="day-head"><span>${dayLabel(group.date)}</span><span class="num">${daySummary(group.items)}</span></div>
+                  <div class="transaction-list">${group.items
+                    .map(
+                      (tx) => `
+                      <article class="transaction-item">
+                        <div>
+                          <p class="item-title">${escapeHtml(tx.title || tx.category)}</p>
+                          <p class="item-sub">${escapeHtml(tx.category)}${tx.source === "fixed" ? " · 자동" : ""}</p>
+                        </div>
+                        <div>
+                          <div class="item-amount num ${tx.type}">${tx.type === "income" ? "+" : tx.type === "saving" ? "" : "-"}${money(tx.amount)}</div>
+                          ${tx.source === "fixed" ? "" : `<button class="ghost-button" data-delete-transaction="${tx.id}">삭제</button>`}
+                        </div>
+                      </article>`,
+                    )
+                    .join("")}</div>
+                </div>`,
               )
-              .join("")}</div>`
-          : `<div class="card empty-state">아직 기록이 없습니다.</div>`
+              .join("")
+          : `<div class="card empty-state">첫 기록을 남겨보세요. 금액만 넣으면 3초면 됩니다.</div>`
       }
     </section>
   `;
@@ -1537,6 +1561,7 @@ function applyServerState(payload, toastText) {
   state = applyFixedItems({
     ...defaultState(),
     ...payload,
+    activeTab: state.activeTab, // 다른 기기의 탭 상태가 내 화면을 점프시키지 않게
     settings: { ...defaultState().settings, ...payload.settings },
     savings: payload.savings || [],
     categories: normalizeCategories(payload),
@@ -2241,6 +2266,8 @@ function openOnboardingWizard() {
 }
 
 let state = applyFixedItems(loadState());
+// 앱은 항상 기록 탭에서 시작 — 기록이 첫 행동이 되게 (사용자 확정)
+state = { ...state, activeTab: "record" };
 saveState({ stamp: false });
 render();
 if (!state.hasOnboarded && !document.querySelector(".wizard-backdrop")) openOnboardingWizard();
