@@ -1,11 +1,26 @@
-const CACHE = "eok-v30"; // 배포마다 버전 올리기
+const CACHE = "eok-v31"; // 배포마다 버전 올리기
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./logic.js", "./sync.js", "./app.js",
   "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-180.png",
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then(async (cache) => {
+        // HTTP 캐시를 우회해 항상 이 배포의 실제 파일을 담는다 — 연속 배포 시
+        // 브라우저 HTTP 캐시의 직전 버전이 새 캐시에 담기는 버전 스큐 방지
+        await Promise.all(
+          ASSETS.map(async (asset) => {
+            const response = await fetch(asset, { cache: "no-store" });
+            if (!response.ok) throw new Error(`fetch failed: ${asset}`);
+            await cache.put(asset, response);
+          }),
+        );
+      })
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
