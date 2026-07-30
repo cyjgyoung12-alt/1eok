@@ -269,7 +269,7 @@ function renderHeader() {
   const today = new Date();
   return `
     <div class="screen-header">
-      <h1 class="title">1억</h1>
+      <h1 class="title">기록</h1>
       <div class="date-pill">${today.getMonth() + 1}월 ${today.getDate()}일</div>
     </div>
   `;
