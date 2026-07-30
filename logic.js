@@ -208,6 +208,22 @@ function renameCategoryInBudgets(budgets, from, to) {
   return next;
 }
 
+// 이름→금액 맵을 비중 목록으로: 0 제외, 내림차순, maxSlices 초과 하위는 "그 외"로 합산
+// (합산 라벨을 "기타"로 하면 실제 기타 카테고리와 행이 겹치므로 "그 외" 사용)
+function categoryShares(amountByName, maxSlices = 5) {
+  const rows = Object.entries(amountByName || {})
+    .map(([name, amount]) => ({ name, amount: Number(amount || 0) }))
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+  if (total <= 0) return [];
+  const kept = rows.length > maxSlices ? rows.slice(0, maxSlices - 1) : rows;
+  if (rows.length > maxSlices) {
+    kept.push({ name: "그 외", amount: rows.slice(maxSlices - 1).reduce((sum, r) => sum + r.amount, 0) });
+  }
+  return kept.map((r) => ({ ...r, pct: (r.amount / total) * 100 }));
+}
+
 // 계좌별 자산 비중: 잔고>0만, 금액 내림차순. maxSlices 초과 시 하위를 "기타"로 합산
 function portfolioShares(balances, accounts, maxSlices = 5) {
   const rows = balances
@@ -251,7 +267,7 @@ const api = {
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, savingProgress, arrivalDate, recordedDayCount,
-  validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares,
+  validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares, categoryShares,
   effectiveMonthlySaving, envelopeStatus, shouldPromptBudget, renameCategoryInBudgets,
 };
 if (typeof module !== "undefined") module.exports = api;

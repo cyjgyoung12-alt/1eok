@@ -217,6 +217,17 @@ eq("recordedDayCount", L.recordedDayCount([
 ], "2026-07"), 2);
 eq("recordedDayCount empty", L.recordedDayCount([], "2026-07"), 0);
 
+// 카테고리 지출 비중: 0 제외·내림차순·% 합 100, 초과분은 "그 외"(기타 카테고리와 충돌 방지)
+const catShares = L.categoryShares({ 식비: 60000, 카페: 30000, 교통: 10000 });
+eq("categoryShares order", catShares.map((s) => s.name), ["식비", "카페", "교통"]);
+approx("categoryShares pct", catShares[0].pct, 60);
+approx("categoryShares sum", catShares.reduce((sum, s) => sum + s.pct, 0), 100);
+eq("categoryShares empty", L.categoryShares({}), []);
+eq("categoryShares zero filtered", L.categoryShares({ 식비: 0 }), []);
+const catMany = L.categoryShares({ a: 700, b: 600, c: 500, d: 400, e: 300, f: 200, g: 100 }, 5);
+eq("categoryShares folds", [catMany.length, catMany.at(-1).name], [5, "그 외"]);
+approx("categoryShares fold amount", catMany.at(-1).amount, 600);
+
 // 동기화 방향: 최신 쪽이 이긴다 (LWW)
 eq("sync both missing", L.syncDirection(undefined, undefined), "none");
 eq("sync server empty", L.syncDirection("2026-07-20T10:00:00.000Z", null), "push");

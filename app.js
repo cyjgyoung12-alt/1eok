@@ -923,7 +923,26 @@ function renderRecord(m) {
           : `<div class="card empty-state">첫 기록을 남겨보세요. 금액만 넣으면 3초면 됩니다.</div>`
       }
     </details>
+    ${spendDonutCardHtml(m)}
   `;
+}
+
+// 기록 탭: 이번 달 카테고리 지출 도넛 (고정비 포함, 저축은 지출이 아니라 제외)
+function spendDonutCardHtml(m) {
+  const shares = categoryShares(m.categoryExpenses, PORTFOLIO_COLORS.length);
+  if (!shares.length) return "";
+  const total = shares.reduce((sum, share) => sum + share.amount, 0);
+  return `
+    <section class="section card">
+      <div class="section-title-row"><h2 class="section-title">이번 달 지출</h2><span class="section-note">${m.today.getMonth() + 1}월 · 고정비 포함</span></div>
+      <div class="portfolio-wrap">
+        <div class="portfolio-donut">
+          ${donutSvgHtml(shares, "카테고리별 지출 비중")}
+          <div class="portfolio-center"><strong class="num">${compactMoney(total)}</strong><span>지출 합계</span></div>
+        </div>
+        <div class="portfolio-list">${donutListHtml(shares)}</div>
+      </div>
+    </section>`;
 }
 
 function bindRecordEvents() {
@@ -958,13 +977,9 @@ function compactMoney(value) {
   return `${n.toLocaleString("ko-KR")}원`;
 }
 
-function portfolioCardHtml(m) {
-  const latest = m.latest;
-  if (!latest) return "";
-  const shares = portfolioShares(latest.balances || [], state.accounts, PORTFOLIO_COLORS.length);
-  if (!shares.length) return "";
-  // 중앙 합계는 도넛이 실제로 그리는 양수 잔고 합(음수 잔고가 섞인 과거 데이터와의 모순 방지)
-  const total = shares.reduce((sum, share) => sum + share.amount, 0);
+// 도넛 SVG (자산·지출 공용): stroke-dasharray 원호, 조각 간 2.5 간격, 12시 시작
+// drawn ≤ len 보장: 극소 조각이 원을 한 바퀴 돌아 다른 조각을 덮지 않게 한다(목록에는 항상 표시됨)
+function donutSvgHtml(shares, ariaLabel) {
   const R = 40;
   const C = 2 * Math.PI * R;
   const gap = shares.length > 1 ? 2.5 : 0;
@@ -972,32 +987,43 @@ function portfolioCardHtml(m) {
   const segments = shares
     .map((share, i) => {
       const len = (share.pct / 100) * C;
-      // drawn ≤ len 보장: 극소 조각이 원을 한 바퀴 돌아 다른 조각을 덮지 않게 한다(목록에는 항상 표시됨)
       const drawn = Math.max(0, len - gap);
       const seg = `<circle r="${R}" cx="60" cy="60" fill="none" stroke="${PORTFOLIO_COLORS[i]}" stroke-width="14" stroke-dasharray="${drawn} ${C - drawn}" stroke-dashoffset="${-offset}" />`;
       offset += len;
       return seg;
     })
     .join("");
-  const rows = shares
+  return `<svg viewBox="0 0 120 120" role="img" aria-label="${ariaLabel}"><g transform="rotate(-90 60 60)">${segments}</g></svg>`;
+}
+
+function donutListHtml(shares) {
+  return shares
     .map(
       (share, i) => `
-        <div class="portfolio-row">
-          <span class="portfolio-dot" style="background:${PORTFOLIO_COLORS[i]}"></span>
-          <span class="portfolio-name">${escapeHtml(share.name)}</span>
-          <strong class="num">${money(share.amount)}</strong>
-          <span class="portfolio-pct num">${share.pct.toFixed(1)}%</span>
-        </div>`,
+      <div class="portfolio-row">
+        <span class="portfolio-dot" style="background:${PORTFOLIO_COLORS[i]}"></span>
+        <span class="portfolio-name">${escapeHtml(share.name)}</span>
+        <strong class="num">${money(share.amount)}</strong>
+        <span class="portfolio-pct num">${share.pct.toFixed(1)}%</span>
+      </div>`,
     )
     .join("");
+}
+
+function portfolioCardHtml(m) {
+  const latest = m.latest;
+  if (!latest) return "";
+  const shares = portfolioShares(latest.balances || [], state.accounts, PORTFOLIO_COLORS.length);
+  if (!shares.length) return "";
+  // 중앙 합계는 도넛이 실제로 그리는 양수 잔고 합(음수 잔고가 섞인 과거 데이터와의 모순 방지)
+  const total = shares.reduce((sum, share) => sum + share.amount, 0);
+  const rows = donutListHtml(shares);
   return `
     <section class="card">
       <div class="section-title-row"><h2 class="section-title">자산 구성</h2><span class="section-note">${Number(latest.month.split("-")[1])}월 결산 기준</span></div>
       <div class="portfolio-wrap">
         <div class="portfolio-donut">
-          <svg viewBox="0 0 120 120" role="img" aria-label="계좌별 자산 비중">
-            <g transform="rotate(-90 60 60)">${segments}</g>
-          </svg>
+          ${donutSvgHtml(shares, "계좌별 자산 비중")}
           <div class="portfolio-center"><strong class="num">${compactMoney(total)}</strong><span>총자산</span></div>
         </div>
         <div class="portfolio-list">${rows}</div>
