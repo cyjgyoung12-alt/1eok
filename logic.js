@@ -224,6 +224,17 @@ function categoryShares(amountByName, maxSlices = 5) {
   return kept.map((r) => ({ ...r, pct: (r.amount / total) * 100 }));
 }
 
+// categoryShares에서 "그 외"로 접힌 세부 항목들(전체 대비 %) — 접힘이 없으면 빈 배열
+function categorySharesRest(amountByName, maxSlices = 5) {
+  const rows = Object.entries(amountByName || {})
+    .map(([name, amount]) => ({ name, amount: Number(amount || 0) }))
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+  if (total <= 0 || rows.length <= maxSlices) return [];
+  return rows.slice(maxSlices - 1).map((r) => ({ ...r, pct: (r.amount / total) * 100 }));
+}
+
 // 계좌별 자산 비중: 잔고>0만, 금액 내림차순. maxSlices 초과 시 하위를 "기타"로 합산
 function portfolioShares(balances, accounts, maxSlices = 5) {
   const rows = balances
@@ -267,7 +278,7 @@ const api = {
   monthsBetween, addMonths,
   requiredMonthlySaving, monthlyVariableBudget, dailyBudgets, missionStreak,
   settlementDeltas, savingSpeed, currentNetWorth, savingProgress, arrivalDate, recordedDayCount,
-  validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares, categoryShares,
+  validateNewCategory, renameCategoryInRecords, syncDirection, portfolioShares, categoryShares, categorySharesRest,
   effectiveMonthlySaving, envelopeStatus, shouldPromptBudget, renameCategoryInBudgets,
 };
 if (typeof module !== "undefined") module.exports = api;

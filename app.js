@@ -553,6 +553,7 @@ function openTransactionSheet(type) {
 
 let toastTimer = 0;
 let recordAccOpen = false; // 기록 아코디언 펼침 상태 (렌더 간 유지, 저장 안 함)
+let spendListOpen = false; // 지출 도넛 항목별 아코디언 펼침 상태
 
 function bindSheetClose(modal) {
   modal.querySelector("[data-close-sheet]").addEventListener("click", () => modal.remove());
@@ -981,13 +982,40 @@ function spendDonutCardHtml(m) {
           <span class="c-pct num" data-c-pct></span>
         </div>
       </div>
+      ${spendListAccordionHtml(m, shares)}
     </section>`;
+}
+
+// 도넛 아래 항목별 아코디언: 조각 색점 매칭 + "그 외"는 세부 항목까지 펼침
+function spendListAccordionHtml(m, shares) {
+  const rest = categorySharesRest(m.spendBreakdown, PORTFOLIO_COLORS.length);
+  const itemCount = shares.filter((s) => s.name !== "그 외").length + rest.length;
+  const restRows = rest
+    .map(
+      (r) => `
+      <div class="portfolio-row sub-row">
+        <span class="portfolio-dot rest"></span>
+        <span class="portfolio-name">${escapeHtml(r.name)}</span>
+        <strong class="num">${money(r.amount)}</strong>
+        <span class="portfolio-pct num">${r.pct.toFixed(1)}%</span>
+      </div>`,
+    )
+    .join("");
+  return `
+    <details class="record-acc donut-acc"${spendListOpen ? " open" : ""} data-spend-acc>
+      <summary><span>항목별 ${itemCount}개</span><span class="acc-side"><span class="acc-chev">▾</span></span></summary>
+      <div class="portfolio-list">${donutListHtml(shares)}${restRows}</div>
+    </details>`;
 }
 
 function bindRecordEvents() {
   const acc = document.querySelector("[data-record-acc]");
   acc?.addEventListener("toggle", () => {
     recordAccOpen = acc.open;
+  });
+  const spendAcc = document.querySelector("[data-spend-acc]");
+  spendAcc?.addEventListener("toggle", () => {
+    spendListOpen = spendAcc.open;
   });
 
   // 지출 도넛: 조각 탭 → 중앙에 이름·금액·%, 같은 조각 다시 탭 → 합계로 복귀

@@ -207,6 +207,10 @@ input:focus, select:focus { outline: 1px solid var(--mint); border-color: var(--
 .donut-center .c-name { font-size: 12px; color: var(--muted); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .donut-center .c-amt { font-size: 18px; font-weight: 800; }
 .donut-center .c-pct { font-size: 12px; color: var(--mint); min-height: 15px; }
+.donut-acc { margin-top: 12px; }
+.donut-acc .portfolio-list { margin-top: 10px; }
+.portfolio-row.sub-row { padding-left: 15px; }
+.portfolio-dot.rest { background: var(--line-strong); }
 
 /* 당겨서 새로고침: #app 밖 고정 요소라 render()와 독립 */
 .ptr {

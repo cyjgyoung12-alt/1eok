@@ -227,6 +227,11 @@ eq("categoryShares zero filtered", L.categoryShares({ 식비: 0 }), []);
 const catMany = L.categoryShares({ a: 700, b: 600, c: 500, d: 400, e: 300, f: 200, g: 100 }, 5);
 eq("categoryShares folds", [catMany.length, catMany.at(-1).name], [5, "그 외"]);
 approx("categoryShares fold amount", catMany.at(-1).amount, 600);
+// "그 외"로 접힌 세부 항목들 — 접힘이 없으면 빈 배열
+const catRest = L.categorySharesRest({ a: 700, b: 600, c: 500, d: 400, e: 300, f: 200, g: 100 }, 5);
+eq("categorySharesRest names", catRest.map((r) => r.name), ["e", "f", "g"]);
+approx("categorySharesRest pct", catRest[0].pct, (300 / 2800) * 100);
+eq("categorySharesRest no fold", L.categorySharesRest({ a: 1, b: 2 }, 5), []);
 
 // 동기화 방향: 최신 쪽이 이긴다 (LWW)
 eq("sync both missing", L.syncDirection(undefined, undefined), "none");
